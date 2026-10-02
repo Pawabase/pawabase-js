@@ -13,7 +13,7 @@ import asyncio
 import json
 import sys
 
-from pawabase_kit.clients import ServiceClient
+from pawabase_core.clients import ServiceClient
 
 GATEWAY = "http://127.0.0.1:18080"
 API = "http://127.0.0.1:8001"
