@@ -124,7 +124,7 @@ test("subscribe connects, sends the API key and scope in the URL, and receives m
   const url = new URL(`ws://x${server.urls[0]}`);
   assert.equal(url.pathname, "/realtime/v1/socket");
   assert.equal(url.searchParams.get("apikey"), "pk_rt");
-  assert.equal(url.searchParams.get("project_id"), "acme");
+  assert.equal(url.searchParams.get("project_id"), null);
   assert.equal(url.searchParams.get("environment"), "dev");
   assert.equal(url.searchParams.get("token"), null);
 

@@ -260,17 +260,20 @@ test("switchOrg refreshes with the organization; null clears it", async () => {
   client.dispose();
 });
 
-test("the OAuth URL needs the project and environment", async () => {
+test("the OAuth URL needs the environment and never carries a secret key", async () => {
   const fake = await serve(() => ({ body: {} }));
   const without = memoryClient(fake.url);
   assert.throws(() => without.auth.signInWithOAuthUrl("github"), ConfigError);
   without.dispose();
-  const client = memoryClient(fake.url, { project: "acme", environment: "production" });
+  const client = memoryClient(fake.url, { environment: "production" });
   const url = new URL(client.auth.signInWithOAuthUrl("github", { redirectTo: "https://app/cb" }));
-  assert.equal(url.pathname, "/auth/v1/authorize/acme/production/github");
+  assert.equal(url.pathname, "/auth/v1/authorize/production/github");
   assert.equal(url.searchParams.get("redirect_to"), "https://app/cb");
   assert.equal(url.searchParams.get("apikey"), "pk_test");
   client.dispose();
+  const secretKey = createClient({ url: fake.url, apiKey: "pb_sk_test", environment: "production", auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
+  assert.throws(() => secretKey.auth.signInWithOAuthUrl("github"), ConfigError);
+  secretKey.dispose();
 });
 
 test("getSessionFromUrl reads tokens, errors, links and MFA from a fragment", async () => {

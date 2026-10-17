@@ -92,6 +92,8 @@ export interface RequestOptions {
   /** An explicit user token for this one call, instead of the session's. */
   accessToken?: string | null;
   parse?: ParseAs;
+  /** `false`: hand back an error status as a `Response` instead of throwing (after retries). For raw responses, such as HTTP functions. */
+  throwOnError?: boolean;
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
@@ -179,6 +181,10 @@ export class HttpClient {
         }),
       );
       if (response.ok) return response;
+      if (options.throwOnError === false && !(response.status === 401 && token && !refreshed && this.config.tokens)) {
+        const retryable = response.status === 429 || (RETRYABLE_STATUS.has(response.status) && idempotent);
+        if (!retry || !retryable || attempt >= retry.retries) return response;
+      }
 
       // A rejected token: refresh once and replay, unless the body cannot be replayed.
       if (
