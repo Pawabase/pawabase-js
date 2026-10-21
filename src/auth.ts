@@ -16,7 +16,7 @@ import type {
   Team,
   User,
 } from "./types.js";
-import { decodeJwt, isRecord, nowSeconds, queryString, sleep } from "./util.js";
+import { decodeJwt, isRecord, isSecretKey, nowSeconds, queryString, sleep } from "./util.js";
 
 export type AuthChangeEvent =
   | "INITIAL_SESSION"
@@ -145,6 +145,10 @@ export class AuthClient implements TokenProvider {
   readonly mfa: AuthMfa;
   readonly sessions: AuthSessions;
   readonly orgs: AuthOrgs;
+  /** Browsers and apps the user has signed in from. */
+  readonly devices: AuthDevices;
+  /** Keys a user makes for themselves to call the API as themselves. */
+  readonly apiKeys: AuthApiKeys;
 
   constructor(
     private readonly http: HttpClient,
@@ -159,6 +163,8 @@ export class AuthClient implements TokenProvider {
     this.mfa = new AuthMfa(http, () => this.refreshSession());
     this.sessions = new AuthSessions(http);
     this.orgs = new AuthOrgs(http);
+    this.devices = new AuthDevices(http);
+    this.apiKeys = new AuthApiKeys(http);
     this.ready = this.initialize();
     this.ready.catch(() => undefined);
   }
@@ -550,11 +556,27 @@ export class AuthClient implements TokenProvider {
     return { status: "signed_in", session };
   }
 
-  /** Where to send the browser for a social sign-in. Needs `project` and `environment` in the client options. */
+  /** Where to send the browser for a social sign-in. Needs `environment` in the client options (or a signed-in session, which names it). */
   signInWithOAuthUrl(provider: string, options: { redirectTo?: string } = {}): string {
-    const { project, environment } = this.scope();
+    const { environment } = this.scope();
+    if (isSecretKey(this.http.config.apiKey)) {
+      throw new ConfigError("Refusing to put a secret key in a URL: use a publishable key for social sign-in.");
+    }
     const query = queryString({ redirect_to: options.redirectTo, apikey: this.http.config.apiKey });
-    return this.http.url(`/auth/v1/authorize/${encodeURIComponent(project)}/${encodeURIComponent(environment)}/${encodeURIComponent(provider)}`) + query;
+    return this.http.url(`/auth/v1/authorize/${encodeURIComponent(environment)}/${encodeURIComponent(provider)}`) + query;
+  }
+
+  /** Trade the `code` a sign-in redirect carried for a session (pass the verifier of a PKCE `code_challenge` if the sign-in began with one). */
+  async exchangeCode(code: string, codeVerifier?: string): Promise<Session> {
+    const wire = await this.http.request<WireSession>({
+      method: "POST",
+      path: "/auth/v1/token/exchange",
+      body: { code, ...(codeVerifier ? { code_verifier: codeVerifier } : {}) },
+      auth: "none",
+    });
+    const session = toSession(wire, undefined);
+    await this.store(session, "SIGNED_IN");
+    return session;
   }
 
   /** Redirect the browser to a provider. After the round trip, {@link getSessionFromUrl} (run automatically) picks the session up. */
@@ -565,16 +587,13 @@ export class AuthClient implements TokenProvider {
     window.location.assign(this.signInWithOAuthUrl(provider, options));
   }
 
-  private scope(): { project: string; environment: string } {
+  private scope(): { environment: string } {
     const claims = this.session ? decodeJwt(this.session.access_token) : null;
-    const project = this.options.project ?? (typeof claims?.["prj"] === "string" ? claims["prj"] : undefined);
     const environment = this.options.environment ?? (typeof claims?.["env"] === "string" ? claims["env"] : undefined);
-    if (!project || !environment) {
-      throw new ConfigError(
-        "Social sign-in needs the project and environment: pass `project` and `environment` to createClient().",
-      );
+    if (!environment) {
+      throw new ConfigError("Social sign-in needs the environment: pass `environment` to createClient().");
     }
-    return { project, environment };
+    return { environment };
   }
 
   /**
@@ -769,6 +788,31 @@ class AuthMfa {
     return result;
   }
 
+  /** Start using emailed codes as a factor (a code is sent to the account's address). */
+  enrollEmail(): Promise<unknown> {
+    return this.http.request({ method: "POST", path: "/auth/v1/mfa/email/enroll" });
+  }
+
+  /** Send the emailed code for a sign-in that is waiting on MFA. */
+  challenge(mfaToken: string): Promise<unknown> {
+    return this.http.request({ method: "POST", path: "/auth/v1/mfa/challenge", body: { mfa_token: mfaToken }, auth: "none" });
+  }
+
+  /** When the environment requires MFA, a sign-in is held until a factor is set up: start it (`totp` or `email`). */
+  startSetup(input: { mfaToken: string; method: "totp" | "email" }): Promise<unknown> {
+    return this.http.request({ method: "POST", path: "/auth/v1/mfa/setup/start", body: { mfa_token: input.mfaToken, method: input.method }, auth: "none" });
+  }
+
+  /** Finish the required setup with a first code: the response carries the session and the recovery codes. */
+  completeSetup(input: { mfaToken: string; code: string; org?: string }): Promise<{ recovery_codes?: string[]; access_token?: string }> {
+    return this.http.request({
+      method: "POST",
+      path: "/auth/v1/mfa/setup/complete",
+      body: { mfa_token: input.mfaToken, code: input.code, ...(input.org ? { org: input.org } : {}) },
+      auth: "none",
+    });
+  }
+
   disable(code: string): Promise<{ enabled: boolean }> {
     return this.http.request({ method: "POST", path: "/auth/v1/mfa/disable", body: { code } });
   }
@@ -794,6 +838,41 @@ class AuthSessions {
   /** Recent sign-in activity for the account. */
   async history(): Promise<SignInEvent[]> {
     return (await this.http.request<{ data: SignInEvent[] }>({ path: "/auth/v1/history" })).data;
+  }
+}
+
+class AuthDevices {
+  constructor(private readonly http: HttpClient) {}
+
+  async list(): Promise<Array<Record<string, unknown>>> {
+    const body = await this.http.request<{ data?: Array<Record<string, unknown>> }>({ path: "/auth/v1/user/devices" });
+    return body.data ?? [];
+  }
+
+  async forget(deviceId: string): Promise<void> {
+    await this.http.request({ method: "DELETE", path: `/auth/v1/user/devices/${encodeURIComponent(deviceId)}` });
+  }
+}
+
+class AuthApiKeys {
+  constructor(private readonly http: HttpClient) {}
+
+  async list(): Promise<Array<Record<string, unknown>>> {
+    const body = await this.http.request<{ data?: Array<Record<string, unknown>> }>({ path: "/auth/v1/user/api-keys" });
+    return body.data ?? [];
+  }
+
+  /** Make a key. The secret is in the answer once and never again. */
+  create(input: { name: string; scopes?: string[]; expiresInDays?: number; org?: string }): Promise<{ secret?: string } & Record<string, unknown>> {
+    return this.http.request({
+      method: "POST",
+      path: "/auth/v1/user/api-keys",
+      body: { name: input.name, scopes: input.scopes ?? [], ...(input.expiresInDays ? { expires_in_days: input.expiresInDays } : {}), ...(input.org ? { org: input.org } : {}) },
+    });
+  }
+
+  async revoke(keyId: string): Promise<void> {
+    await this.http.request({ method: "DELETE", path: `/auth/v1/user/api-keys/${encodeURIComponent(keyId)}` });
   }
 }
 

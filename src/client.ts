@@ -21,8 +21,9 @@ export interface ClientOptions {
   /** The project API key: `pb_pk_…` (publishable, safe in a browser) or `pb_sk_…` (secret, servers only). */
   apiKey: string;
   /**
-   * The project's ref and the environment's name. Optional: only social sign-in needs them
-   * (its URL names the environment), and they are sent as scope hints to the gateway.
+   * The environment this client talks to (`development`, `production`, a preview's name). The API key already names
+   * one, so it is optional for data calls; social sign-in, realtime and the management clients (`@pawabase/client/manage`,
+   * `@pawabase/client/admin`) use it. `project` is only sent as a scope hint.
    */
   project?: string;
   environment?: string;

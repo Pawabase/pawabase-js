@@ -148,7 +148,6 @@ export class RealtimeClient {
     base.search = "";
     base.searchParams.set("apikey", this.http.config.apiKey);
     if (token) base.searchParams.set("token", token);
-    if (this.options.project) base.searchParams.set("project_id", this.options.project);
     if (this.options.environment) base.searchParams.set("environment", this.options.environment);
     return base.toString();
   }
