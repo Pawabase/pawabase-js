@@ -1,6 +1,6 @@
 {
   "name": "@pawabase/client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Official TypeScript client for Pawabase: data, auth, storage, functions, flows and realtime.",
   "type": "module",
   "main": "./dist/cjs/index.js",
