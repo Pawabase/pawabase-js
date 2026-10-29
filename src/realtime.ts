@@ -148,7 +148,6 @@ export class RealtimeClient {
     base.search = "";
     base.searchParams.set("apikey", this.http.config.apiKey);
     if (token) base.searchParams.set("token", token);
-    if (this.options.project) base.searchParams.set("project_id", this.options.project);
     if (this.options.environment) base.searchParams.set("environment", this.options.environment);
     return base.toString();
   }
@@ -454,6 +453,68 @@ export class RealtimeClient {
   /** Publish from anywhere, without a socket. The channel's `publish` rule applies. */
   publish(channel: string, event: string, payload?: unknown): Promise<{ id: string; channel: string; event: string }> {
     return this.http.request({ method: "POST", path: "/realtime/v1/publish", body: { channel, event, payload } });
+  }
+
+  /**
+   * Listen to channels over Server-Sent Events: one-way, over plain HTTP, with no socket to manage. Iterate the frames
+   * (`welcome`, `message`, `presence_diff`) until you `break` or abort the `signal`. Publish with {@link publish}. At most 20 channels
+   * per stream; the signed-in user, if any, is who is listening.
+   *
+   * ```ts
+   * for await (const frame of pawabase.realtime.stream(["chat:lobby"])) if (frame.type === "message") show(frame.payload);
+   * ```
+   */
+  async *stream(channels: string | string[], options: { signal?: AbortSignal } = {}): AsyncGenerator<Record<string, any>> {
+    const names = Array.isArray(channels) ? channels : [channels];
+    if (names.length === 0) throw new ConfigError("Pass at least one channel to listen to.");
+    const token = (await this.auth?.getAccessToken().catch(() => null)) ?? null;
+    const response = await this.http.send({
+      path: "/realtime/v1/sse",
+      query: { channels: names.join(","), ...(token ? { token } : {}) },
+      headers: { accept: "text/event-stream" },
+      retry: false,
+      timeoutMs: 0, // a stream is meant to stay open
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let data: string[] = [];
+    const flush = (): Record<string, any> | null => {
+      const text = data.join("\n");
+      data = [];
+      if (!text) return null;
+      try {
+        const frame: unknown = JSON.parse(text);
+        return frame && typeof frame === "object" && !Array.isArray(frame) ? (frame as Record<string, any>) : null;
+      } catch {
+        return null;
+      }
+    };
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline = buffer.indexOf("\n");
+        while (newline >= 0) {
+          const line = buffer.slice(0, newline).replace(/\r$/, "");
+          buffer = buffer.slice(newline + 1);
+          if (line === "") {
+            const frame = flush();
+            if (frame) yield frame;
+          } else if (line.startsWith("data:")) {
+            data.push(line.slice(5).replace(/^ /, ""));
+          }
+          newline = buffer.indexOf("\n");
+        }
+      }
+      const last = flush();
+      if (last) yield last;
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
   }
 
   /** Who is on a channel right now. */

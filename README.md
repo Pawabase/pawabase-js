@@ -32,7 +32,7 @@ const { data, total } = await pawabase
 ## Contents
 
 - [Keys](#keys) · [Records](#records) · [Auth](#auth) · [Storage](#storage) · [Functions, flows and routes](#functions-flows-and-routes) · [Realtime](#realtime)
-- [Types](#types) · [Errors](#errors) · [Retries and timeouts](#retries-and-timeouts) · [Servers and SSR](#servers-and-ssr) · [Testing](#testing-your-app)
+- [Managing an environment](#managing-an-environment-secret-key) · [Types](#types) · [Errors](#errors) · [Retries and timeouts](#retries-and-timeouts) · [Servers and SSR](#servers-and-ssr) · [Testing](#testing-your-app)
 
 ## Keys
 
@@ -118,12 +118,17 @@ and across tabs the Web Locks API serialises it where the browser has it (tab-to
 
 Also: `signInWithMagicLink` / `verifyMagicLink`, `requestPasswordReset` / `resetPassword`, `verifyEmail`,
 `resendVerification`, `confirmEmailChange`, `mfa.*` (enroll, verify, disable, recovery codes), `sessions.*`,
-`orgs.*` (members, invitations, teams), `switchOrg(slug)`, `settings()`.
+`orgs.*` (members, invitations, teams), `devices.*`, `apiKeys.*` (keys a user makes for themselves), `exchangeCode(code)`, `switchOrg(slug)`, `settings()`.
 
-**Social sign-in** needs `project` and `environment` in the options, because the provider URL names them:
+Also: **guest sessions** (`signInAnonymously()`, then `upgradeAnonymous({ email, password })` keeps what the guest made), **emailed codes**
+(`sendEmailCode({ email })`, `verifyEmailCode({ email, code })`), **passkeys** (in a browser `auth.passkeys.register()` and
+`auth.passkeys.signIn()` do the whole WebAuthn ceremony; `list`, `remove`, and the `request…` / `finish…` pairs are there for native apps and tests),
+`issueToken("billing")` for a short-lived token for another service, and `jwks()` for the public keys that verify it.
+
+**Social sign-in** needs the `environment` in the options, because the provider URL names it (a publishable key only: a secret key is refused):
 
 ```ts
-const pawabase = createClient({ url, apiKey, project: "acme", environment: "production" });
+const pawabase = createClient({ url, apiKey, environment: "production" });
 pawabase.auth.signInWithOAuth("github", { redirectTo: location.origin });  // redirects
 // On return, the tokens in the URL fragment are picked up automatically (detectSessionInUrl).
 ```
@@ -175,9 +180,47 @@ The connection reconnects with backoff, rejoins every channel, and with `replay:
 and delivers it once (messages are de-duplicated by id). Pings run every 25 s and a silent link is recycled.
 A refreshed access token is sent to the open socket without reconnecting.
 
+No socket needed: `for await (const frame of pawabase.realtime.stream(["chat:lobby"])) …` listens over Server-Sent Events (stop with `break` or an
+`AbortSignal`), and `pawabase.realtime.publish(...)` sends. Channel rules and dashboards are managed with `manage(client).realtimeChannels` and
+`manage(client).dashboards`.
+
 On Node 20 there is no global `WebSocket`; pass one: `realtime: { webSocket: WebSocket }` from the `ws` package.
 
 HTTP counterparts need no socket: `realtime.publish(channel, event, payload)`, `realtime.presence(channel)`, `realtime.history(channel)`.
+
+## Managing an environment (secret key)
+
+Everything Studio does is available to your servers and scripts with an environment's secret key (`pb_sk_…`), as two subpath imports that stay out of
+your browser bundle unless you import them:
+
+```ts
+import { createClient } from "@pawabase/client";
+import { manage } from "@pawabase/client/manage";
+import { admin } from "@pawabase/client/admin";
+
+const pawabase = createClient({ url, apiKey: process.env.PAWABASE_SECRET_KEY!, environment: "production" });
+const m = manage(pawabase);
+
+await m.secrets.set("STRIPE_KEY", "sk_live_…");
+await m.firewall.ban("203.0.113.7", { seconds: 3600 });
+await m.jobs.replay({ job: "send_mail", sinceMinutes: 60, dryRun: true });
+await m.backups.snapshot("before-launch");
+await manage(pawabase, "staging").flows.list();            // the same API for another environment the key may manage
+
+const a = admin(pawabase);                                  // the people who sign in to your application
+await a.users.create({ email: "ada@example.com", password: "…", roles: ["editor"] });
+await a.users.update(userId, { disabled: true });
+await a.orgs.addMember("acme", { email: "ada@example.com", role: "admin" });
+```
+
+`manage()` groups the platform by what you are doing: **data** (`resources`, `schema`, `policies`, `schemas`, `transformers`, `routes`, `database`, `runtime`),
+**automation** (`flows`, `schedules`, `subscriptions`, `events`, `webhooks`, `inboundHooks`, `jobs`, `functions`), **files and mail** (`buckets`, `cache`, `mail`,
+`mailTemplates`), **access** (`keys`, `secrets`, `domains`, `firewall`), **observe** (`observability`, `alarms`, `statusPage`, `health`) and **lifecycle**
+(`environments`, `releases`, `backups`). Definitions (`flows`, `policies`, `webhooks`…) share `list`, `getOne`, `create`, `replace` and `remove`, and take
+`{ branch }` to work on a feature branch. `admin()` has `users`, `roles`, `orgs`, `invitations`, `sessions`, `apiKeys`, `devices` and `insight`
+(events, statistics, identity backup, hosted pages). Both refuse a publishable key, and a key manages only its own environment.
+
+To write the functions themselves in TypeScript, see [`@pawabase/functions`](https://github.com/Pawabase/pawabase-functions-js).
 
 ## Types
 
@@ -251,7 +294,7 @@ const asUser = pawabase.asUser(tokenFromTheRequest);
 await asUser.from("tasks").all();
 
 // A server acting as itself, bypassing policies.
-const admin = createClient({ url, apiKey: process.env.PAWABASE_SECRET_KEY! });
+const server = createClient({ url, apiKey: process.env.PAWABASE_SECRET_KEY! });
 ```
 
 ## Testing your app

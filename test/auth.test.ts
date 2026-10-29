@@ -260,17 +260,20 @@ test("switchOrg refreshes with the organization; null clears it", async () => {
   client.dispose();
 });
 
-test("the OAuth URL needs the project and environment", async () => {
+test("the OAuth URL needs the environment and never carries a secret key", async () => {
   const fake = await serve(() => ({ body: {} }));
   const without = memoryClient(fake.url);
   assert.throws(() => without.auth.signInWithOAuthUrl("github"), ConfigError);
   without.dispose();
-  const client = memoryClient(fake.url, { project: "acme", environment: "production" });
+  const client = memoryClient(fake.url, { environment: "production" });
   const url = new URL(client.auth.signInWithOAuthUrl("github", { redirectTo: "https://app/cb" }));
-  assert.equal(url.pathname, "/auth/v1/authorize/acme/production/github");
+  assert.equal(url.pathname, "/auth/v1/authorize/production/github");
   assert.equal(url.searchParams.get("redirect_to"), "https://app/cb");
   assert.equal(url.searchParams.get("apikey"), "pk_test");
   client.dispose();
+  const secretKey = createClient({ url: fake.url, apiKey: "pb_sk_test", environment: "production", auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
+  assert.throws(() => secretKey.auth.signInWithOAuthUrl("github"), ConfigError);
+  secretKey.dispose();
 });
 
 test("getSessionFromUrl reads tokens, errors, links and MFA from a fragment", async () => {
@@ -381,4 +384,97 @@ test("two tabs: a session another tab already refreshed is adopted instead of re
   assert.equal(adopted.refresh_token, "newer-from-other-tab");
   assert.equal(refreshes, 0, "no token exchange: the other tab's result was used");
   a.dispose();
+});
+
+test("a guest session is started without credentials and upgraded to a full account", async () => {
+  const guest = { ...user(), email: null, is_anonymous: true };
+  const fake = await serve((req) => {
+    if (req.path === "/auth/v1/anonymous") return { status: 201, body: sessionBody(3600, { user: guest }) };
+    if (req.path === "/auth/v1/anonymous/upgrade") return { body: { user: { ...user(), is_anonymous: false }, verification_sent: true } };
+    return undefined;
+  });
+  const client = memoryClient(fake.url);
+  const events: string[] = [];
+  client.auth.onAuthStateChange((event) => events.push(event));
+  const session = await client.auth.signInAnonymously();
+  assert.ok(session.access_token);
+  assert.equal(fake.requests[0]!.headers["authorization"], undefined);
+  assert.equal((await client.auth.getSession())?.user.email, null);
+  const result = await client.auth.upgradeAnonymous({ email: "ada@example.com", password: "pw", name: "Ada" });
+  assert.equal(result.verification_sent, true);
+  assert.deepEqual(fake.requests[1]!.json, { email: "ada@example.com", password: "pw", name: "Ada" });
+  assert.equal(fake.requests[1]!.headers["authorization"], `Bearer ${session.access_token}`);
+  assert.equal((await client.auth.getSession())?.user.email, "ada@example.com");
+  await tick();
+  assert.ok(events.includes("SIGNED_IN") && events.includes("USER_UPDATED"));
+  client.dispose();
+});
+
+test("email codes sign in, and an account with a second factor is asked for it", async () => {
+  const fake = await serve((req) => {
+    if (req.path === "/auth/v1/email-code") return { body: { sent: true, message: "ok" } };
+    if (req.path === "/auth/v1/email-code/verify") return req.json.code === "000000" ? { body: { mfa_required: true, mfa_token: "m1", factors: ["totp"] } } : { body: sessionBody() };
+    return undefined;
+  });
+  const client = memoryClient(fake.url);
+  await client.auth.sendEmailCode({ email: "ada@example.com", createUser: false });
+  assert.deepEqual(fake.requests[0]!.json, { email: "ada@example.com", create_user: false });
+  const ok = await client.auth.verifyEmailCode({ email: "ada@example.com", code: "123456" });
+  assert.equal(ok.status, "signed_in");
+  assert.deepEqual(fake.requests[1]!.json, { email: "ada@example.com", code: "123456" });
+  const second = await client.auth.verifyEmailCode({ email: "ada@example.com", code: "000000" });
+  assert.equal(second.status, "mfa_required");
+  client.dispose();
+});
+
+test("passkeys carry both ends of the ceremony over the wire", async () => {
+  const fake = await serve((req) => {
+    if (req.path === "/auth/v1/passkeys/authenticate/options") return { body: { ticket: "tk_1", options: { challenge: "c" } } };
+    if (req.path === "/auth/v1/passkeys/authenticate/verify") return { body: sessionBody(3600, { user: user() }) };
+    if (req.path === "/auth/v1/passkeys/register/options") return { body: { ticket: "tk_2", options: { challenge: "c" } } };
+    if (req.path === "/auth/v1/passkeys/register/verify") return { status: 201, body: { passkey: { id: "p1", name: "Laptop" } } };
+    if (req.path === "/auth/v1/passkeys" && req.method === "GET") return { body: { data: [{ id: "p1", name: "Laptop" }] } };
+    if (req.method === "DELETE") return { body: { deleted: true } };
+    return undefined;
+  });
+  const client = memoryClient(fake.url);
+  const challenge = await client.auth.passkeys.requestSignIn({ email: "ada@example.com" });
+  assert.equal(challenge.ticket, "tk_1");
+  assert.deepEqual(fake.requests[0]!.json, { email: "ada@example.com" });
+  const session = await client.auth.passkeys.finishSignIn({ ticket: "tk_1", credential: { id: "cred" } });
+  assert.ok(session.access_token);
+  assert.equal((await client.auth.getSession())?.access_token, session.access_token);
+  assert.deepEqual(fake.requests[1]!.json, { ticket: "tk_1", credential: { id: "cred" } });
+  assert.equal((await client.auth.passkeys.requestRegistration()).ticket, "tk_2");
+  const made = await client.auth.passkeys.finishRegistration({ ticket: "tk_2", credential: { id: "cred" }, name: "Laptop" });
+  assert.equal(made.passkey.id, "p1");
+  assert.deepEqual(fake.requests[3]!.json, { ticket: "tk_2", credential: { id: "cred" }, name: "Laptop" });
+  assert.deepEqual((await client.auth.passkeys.list()).map((p) => p.id), ["p1"]);
+  await client.auth.passkeys.remove("p/1");
+  assert.equal(fake.requests.at(-1)!.path, "/auth/v1/passkeys/p%2F1");
+  client.dispose();
+});
+
+test("the browser passkey helpers say so when WebAuthn is not there", async () => {
+  const fake = await serve(() => ({ body: {} }));
+  const client = memoryClient(fake.url);
+  await assert.rejects(client.auth.passkeys.signIn(), ConfigError);
+  await assert.rejects(client.auth.passkeys.register(), ConfigError);
+  assert.equal(fake.requests.length, 0);
+  client.dispose();
+});
+
+test("integration tokens are issued for the session and verified with the public keys", async () => {
+  const fake = await serve((req) => {
+    if (req.path === "/auth/v1/token-profiles/issue") return { body: { token: "t", token_type: "bearer", expires_in: 300, expires_at: 1, audience: "https://billing" } };
+    if (req.path.endsWith("/jwks")) return { body: { keys: [{ kid: "k1" }] } };
+    return undefined;
+  });
+  const client = memoryClient(fake.url, { environment: "production" });
+  const issued = await client.auth.issueToken("billing");
+  assert.equal(issued.audience, "https://billing");
+  assert.deepEqual(fake.requests[0]!.json, { profile: "billing" });
+  assert.equal((await client.auth.jwks()).keys[0]!.kid, "k1");
+  assert.equal(fake.requests[1]!.path, "/auth/v1/token-keys/production/jwks");
+  client.dispose();
 });
