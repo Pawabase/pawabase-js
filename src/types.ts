@@ -49,6 +49,9 @@ export interface AuthSettings {
   signup_enabled: boolean;
   email_verification_required: boolean;
   magic_link_enabled: boolean;
+  email_code_enabled: boolean;
+  anonymous_enabled: boolean;
+  passkeys_enabled: boolean;
   mfa_enabled: boolean;
   providers: string[];
   password_policy: { kind: string; min_length: number };

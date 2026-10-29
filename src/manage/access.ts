@@ -9,6 +9,11 @@ export class Keys extends Service {
     return this.get("/keys");
   }
 
+  /** Every scope a key can hold, with what each allows (the choices for `create({ scopes })`). */
+  scopes(): Promise<Api> {
+    return this.project("GET", "/key-scopes");
+  }
+
   /**
    * Make a key; the key itself is in the answer once. `scopes` limit what it may do (`resource:read`, `functions:invoke`…),
    * `allowedIps` and `allowedRoutes` (`"GET /rest/v1/orders"`, `"/functions/v1/*"`) limit where and what it may call.

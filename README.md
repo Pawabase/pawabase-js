@@ -120,6 +120,11 @@ Also: `signInWithMagicLink` / `verifyMagicLink`, `requestPasswordReset` / `reset
 `resendVerification`, `confirmEmailChange`, `mfa.*` (enroll, verify, disable, recovery codes), `sessions.*`,
 `orgs.*` (members, invitations, teams), `devices.*`, `apiKeys.*` (keys a user makes for themselves), `exchangeCode(code)`, `switchOrg(slug)`, `settings()`.
 
+Also: **guest sessions** (`signInAnonymously()`, then `upgradeAnonymous({ email, password })` keeps what the guest made), **emailed codes**
+(`sendEmailCode({ email })`, `verifyEmailCode({ email, code })`), **passkeys** (in a browser `auth.passkeys.register()` and
+`auth.passkeys.signIn()` do the whole WebAuthn ceremony; `list`, `remove`, and the `request…` / `finish…` pairs are there for native apps and tests),
+`issueToken("billing")` for a short-lived token for another service, and `jwks()` for the public keys that verify it.
+
 **Social sign-in** needs the `environment` in the options, because the provider URL names it (a publishable key only: a secret key is refused):
 
 ```ts
@@ -174,6 +179,10 @@ await room.unsubscribe();
 The connection reconnects with backoff, rejoins every channel, and with `replay: n` fetches what you missed
 and delivers it once (messages are de-duplicated by id). Pings run every 25 s and a silent link is recycled.
 A refreshed access token is sent to the open socket without reconnecting.
+
+No socket needed: `for await (const frame of pawabase.realtime.stream(["chat:lobby"])) …` listens over Server-Sent Events (stop with `break` or an
+`AbortSignal`), and `pawabase.realtime.publish(...)` sends. Channel rules and dashboards are managed with `manage(client).realtimeChannels` and
+`manage(client).dashboards`.
 
 On Node 20 there is no global `WebSocket`; pass one: `realtime: { webSocket: WebSocket }` from the `ws` package.
 

@@ -149,6 +149,8 @@ export class AuthClient implements TokenProvider {
   readonly devices: AuthDevices;
   /** Keys a user makes for themselves to call the API as themselves. */
   readonly apiKeys: AuthApiKeys;
+  /** Passkeys (WebAuthn): register one, sign in with one. */
+  readonly passkeys: AuthPasskeys;
 
   constructor(
     private readonly http: HttpClient,
@@ -165,6 +167,7 @@ export class AuthClient implements TokenProvider {
     this.orgs = new AuthOrgs(http);
     this.devices = new AuthDevices(http);
     this.apiKeys = new AuthApiKeys(http);
+    this.passkeys = new AuthPasskeys(http, (wire) => this.adopt(wire));
     this.ready = this.initialize();
     this.ready.catch(() => undefined);
   }
@@ -556,6 +559,72 @@ export class AuthClient implements TokenProvider {
     return { status: "signed_in", session };
   }
 
+  /** Keep a session the server just issued and announce it. */
+  private async adopt(wire: WireSession): Promise<Session> {
+    await this.ready;
+    const session = toSession(wire, undefined);
+    await this.store(session, "SIGNED_IN");
+    return session;
+  }
+
+  /**
+   * Start a guest session: an account with no email or password, for someone who has not signed up yet. Turn it into a real account with
+   * {@link upgradeAnonymous}, keeping everything the guest created. The environment must allow guest sign-in.
+   */
+  async signInAnonymously(): Promise<Session> {
+    const wire = await this.http.request<WireSession>({ method: "POST", path: "/auth/v1/anonymous", body: {}, auth: "none" });
+    return this.adopt(wire);
+  }
+
+  /** Turn the signed-in guest into a full account. A verification email is sent. */
+  async upgradeAnonymous(input: { email: string; password?: string; name?: string; redirectTo?: string }): Promise<{ user: User; verification_sent: boolean }> {
+    await this.ready;
+    const result = await this.http.request<{ user: User; verification_sent: boolean }>({
+      method: "POST",
+      path: "/auth/v1/anonymous/upgrade",
+      body: {
+        email: input.email,
+        ...(input.password ? { password: input.password } : {}),
+        ...(input.name ? { name: input.name } : {}),
+        ...(input.redirectTo ? { redirect_to: input.redirectTo } : {}),
+      },
+    });
+    if (this.session) {
+      this.session = { ...this.session, user: result.user };
+      await Promise.resolve(this.storage.setItem(this.storageKey, JSON.stringify(this.session))).catch(() => undefined);
+    }
+    this.emit("USER_UPDATED");
+    return result;
+  }
+
+  /** Email a short sign-in code. The answer is the same whether or not the address has an account. */
+  async sendEmailCode(input: { email: string; createUser?: boolean }): Promise<void> {
+    await this.http.request({ method: "POST", path: "/auth/v1/email-code", body: { email: input.email, create_user: input.createUser ?? true }, auth: "none" });
+  }
+
+  /** Sign in with the code from {@link sendEmailCode}. An account with a second factor answers `mfa_required`. */
+  async verifyEmailCode(input: { email: string; code: string }): Promise<SignInResult> {
+    const wire = await this.http.request<
+      (WireSession & { mfa_required?: undefined }) | { mfa_required: true; mfa_token: string; factors: string[] }
+    >({ method: "POST", path: "/auth/v1/email-code/verify", body: { email: input.email, code: input.code }, auth: "none" });
+    if ("mfa_required" in wire && wire.mfa_required) return this.challenge(wire.mfa_token, wire.factors);
+    const session = await this.adopt(wire as WireSession);
+    return { status: "signed_in", session };
+  }
+
+  /** The public keys that verify integration tokens ({@link issueToken}), for a server that checks them. */
+  async jwks(): Promise<{ keys: Array<Record<string, unknown>> }> {
+    const { environment } = this.scope();
+    return this.http.request({ path: `/auth/v1/token-keys/${encodeURIComponent(environment)}/jwks`, auth: "none" });
+  }
+
+  /**
+   * Exchange the signed-in session for a short-lived token for another service, shaped by a token profile you defined in Studio.
+   */
+  issueToken(profile: string): Promise<IssuedToken> {
+    return this.http.request({ method: "POST", path: "/auth/v1/token-profiles/issue", body: { profile } });
+  }
+
   /** Where to send the browser for a social sign-in. Needs `environment` in the client options (or a signed-in session, which names it). */
   signInWithOAuthUrl(provider: string, options: { redirectTo?: string } = {}): string {
     const { environment } = this.scope();
@@ -820,6 +889,163 @@ class AuthMfa {
   /** Replace the recovery codes. Needs a current authenticator code. */
   regenerateRecoveryCodes(code: string): Promise<{ recovery_codes: string[] }> {
     return this.http.request({ method: "POST", path: "/auth/v1/mfa/recovery-codes", body: { code } });
+  }
+}
+
+export interface IssuedToken {
+  token: string;
+  token_type: string;
+  expires_in: number;
+  expires_at: number;
+  audience: string;
+}
+
+export interface Passkey {
+  id: string;
+  name: string;
+  device_type: string;
+  backed_up: boolean;
+  transports: string[];
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/** What the server asks the device to do, and the ticket that ties the answer back to the request. */
+export interface PasskeyChallenge {
+  ticket: string;
+  options: Record<string, unknown>;
+}
+
+const b64uToBytes = (value: string): ArrayBuffer => {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const raw = atob(padded);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+  return bytes.buffer;
+};
+
+const bytesToB64u = (buffer: ArrayBuffer | ArrayBufferView): string => {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+function webauthn(): CredentialsContainer {
+  if (typeof navigator === "undefined" || !navigator.credentials || typeof PublicKeyCredential === "undefined") {
+    throw new ConfigError("Passkeys need a browser that supports WebAuthn. On a server, use `requestRegistration` / `requestSignIn` and carry the credential yourself.");
+  }
+  return navigator.credentials;
+}
+
+/**
+ * Passkeys. In a browser, {@link register} and {@link signIn} do the whole ceremony. Anywhere else (a native app, a test), use the
+ * `request…` and `finish…` pairs: hand `options` to the platform's WebAuthn, and send what it returns (already encoded as the
+ * server expects) back with the `ticket`.
+ */
+class AuthPasskeys {
+  constructor(
+    private readonly http: HttpClient,
+    private readonly adopt: (wire: WireSession) => Promise<Session>,
+  ) {}
+
+  async list(): Promise<Passkey[]> {
+    const body = await this.http.request<{ data: Passkey[] }>({ path: "/auth/v1/passkeys" });
+    return body.data;
+  }
+
+  async remove(passkeyId: string): Promise<void> {
+    await this.http.request({ method: "DELETE", path: `/auth/v1/passkeys/${encodeURIComponent(passkeyId)}` });
+  }
+
+  /** Begin adding a passkey to the signed-in account. */
+  requestRegistration(): Promise<PasskeyChallenge> {
+    return this.http.request({ method: "POST", path: "/auth/v1/passkeys/register/options", body: {} });
+  }
+
+  /** Finish adding a passkey with the credential the device made. */
+  finishRegistration(input: { ticket: string; credential: Record<string, unknown>; name?: string }): Promise<{ passkey: Passkey }> {
+    return this.http.request({
+      method: "POST",
+      path: "/auth/v1/passkeys/register/verify",
+      body: { ticket: input.ticket, credential: input.credential, ...(input.name ? { name: input.name } : {}) },
+    });
+  }
+
+  /** Begin signing in with a passkey. With an email, only that account's passkeys are offered. */
+  requestSignIn(input: { email?: string } = {}): Promise<PasskeyChallenge> {
+    return this.http.request({ method: "POST", path: "/auth/v1/passkeys/authenticate/options", body: input.email ? { email: input.email } : {}, auth: "none" });
+  }
+
+  /** Finish signing in with the credential the device made. */
+  async finishSignIn(input: { ticket: string; credential: Record<string, unknown> }): Promise<Session> {
+    const wire = await this.http.request<WireSession>({
+      method: "POST",
+      path: "/auth/v1/passkeys/authenticate/verify",
+      body: { ticket: input.ticket, credential: input.credential },
+      auth: "none",
+    });
+    return this.adopt(wire);
+  }
+
+  /** In a browser: ask the device to make a passkey and add it to the signed-in account. */
+  async register(input: { name?: string } = {}): Promise<Passkey> {
+    const credentials = webauthn();
+    const { ticket, options } = await this.requestRegistration();
+    const publicKey = {
+      ...options,
+      challenge: b64uToBytes(String(options.challenge)),
+      user: { ...(options.user as Record<string, unknown>), id: new TextEncoder().encode(String((options.user as Record<string, unknown>).id)) },
+      excludeCredentials: ((options.excludeCredentials as Array<Record<string, string>> | undefined) ?? []).map((c) => ({ ...c, id: b64uToBytes(c.id as string) })),
+    } as unknown as PublicKeyCredentialCreationOptions;
+    const made = (await credentials.create({ publicKey })) as PublicKeyCredential | null;
+    if (!made) throw new PawabaseError("No passkey was made.");
+    const response = made.response as AuthenticatorAttestationResponse;
+    const result = await this.finishRegistration({
+      ticket,
+      ...(input.name ? { name: input.name } : {}),
+      credential: {
+        id: made.id,
+        rawId: bytesToB64u(made.rawId),
+        type: made.type,
+        response: {
+          clientDataJSON: bytesToB64u(response.clientDataJSON),
+          attestationObject: bytesToB64u(response.attestationObject),
+          transports: typeof response.getTransports === "function" ? response.getTransports() : [],
+        },
+        clientExtensionResults: made.getClientExtensionResults(),
+      },
+    });
+    return result.passkey;
+  }
+
+  /** In a browser: ask the device for a passkey and sign in with it. */
+  async signIn(input: { email?: string } = {}): Promise<Session> {
+    const credentials = webauthn();
+    const { ticket, options } = await this.requestSignIn(input);
+    const publicKey = {
+      ...options,
+      challenge: b64uToBytes(String(options.challenge)),
+      allowCredentials: ((options.allowCredentials as Array<Record<string, string>> | undefined) ?? []).map((c) => ({ ...c, id: b64uToBytes(c.id as string) })),
+    } as unknown as PublicKeyCredentialRequestOptions;
+    const got = (await credentials.get({ publicKey })) as PublicKeyCredential | null;
+    if (!got) throw new PawabaseError("No passkey was chosen.");
+    const response = got.response as AuthenticatorAssertionResponse;
+    return this.finishSignIn({
+      ticket,
+      credential: {
+        id: got.id,
+        rawId: bytesToB64u(got.rawId),
+        type: got.type,
+        response: {
+          clientDataJSON: bytesToB64u(response.clientDataJSON),
+          authenticatorData: bytesToB64u(response.authenticatorData),
+          signature: bytesToB64u(response.signature),
+          userHandle: response.userHandle ? bytesToB64u(response.userHandle) : null,
+        },
+        clientExtensionResults: got.getClientExtensionResults(),
+      },
+    });
   }
 }
 

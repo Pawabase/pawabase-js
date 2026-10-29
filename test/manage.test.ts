@@ -126,3 +126,47 @@ test("user administration is scoped to the environment", async () => {
   assert.equal(last().path, "/platform/v1/envs/staging/auth/users");
   assert.equal(last().query.get("status"), "locked");
 });
+
+test("realtime channel rules", async () => {
+  const { m, last } = await secret();
+  await m.realtimeChannels.list();
+  assert.equal(last().path, `${BASE}/realtime-channels`);
+  await m.realtimeChannels.create("chat:*", { kind: "presence", publish: "signed_in", history: 100, messageSizeLimit: 4096 });
+  assert.equal(last().method, "POST");
+  assert.deepEqual(last().json, { pattern: "chat:*", kind: "presence", publish: "signed_in", history: 100, message_size_limit: 4096 });
+  await m.realtimeChannels.update("c1", { history: 10, presence: false });
+  assert.equal(last().method, "PATCH");
+  assert.equal(last().path, `${BASE}/realtime-channels/c1`);
+  assert.deepEqual(last().json, { history: 10, presence: false });
+  await m.realtimeChannels.remove("c1");
+  assert.equal(last().method, "DELETE");
+});
+
+test("dashboards", async () => {
+  const { m, last } = await secret();
+  await m.dashboards.create("sales", { definition: { pages: [{ title: "Sales" }] }, title: "Sales" });
+  assert.equal(last().path, `${BASE}/dashboards`);
+  assert.deepEqual(last().json, { name: "sales", title: "Sales", description: "", definition: { pages: [{ title: "Sales" }] }, enabled: true });
+  await m.dashboards.update("d1", { enabled: false });
+  assert.equal(last().method, "PATCH");
+  assert.deepEqual(last().json, { enabled: false });
+  await m.dashboards.publish("d1", { public: true, publishableKey: "pb_pk_12345678" });
+  assert.equal(last().method, "PUT");
+  assert.equal(last().path, `${BASE}/dashboards/d1/publish`);
+  assert.deepEqual(last().json, { public: true, publishable_key: "pb_pk_12345678" });
+  await m.dashboards.publish("d1", { public: false });
+  assert.deepEqual(last().json, { public: false });
+  await m.dashboards.getOne("d1");
+  await m.dashboards.remove("d1");
+  assert.equal(last().method, "DELETE");
+});
+
+test("key scopes and token profile previews", async () => {
+  const { client, m, last } = await secret();
+  await m.keys.scopes();
+  assert.equal(last().path, "/platform/v1/key-scopes");
+  await admin(client).insight.previewTokenProfile({ name: "billing" }, "u1", { org: "acme" });
+  assert.equal(last().method, "POST");
+  assert.equal(last().path, `${BASE}/auth/token-profiles/preview`);
+  assert.deepEqual(last().json, { profile: { name: "billing" }, user_id: "u1", org: "acme" });
+});

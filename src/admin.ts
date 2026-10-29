@@ -262,6 +262,11 @@ export class Insight extends AdminService {
   }
 
   /** The HTML a hosted sign-in page is served as for the branding being edited (the saved branding when omitted). */
+  /** The claims a token profile would put in a token for this user (and organization), without issuing one. */
+  previewTokenProfile(profile: Body, userId: string, options: { org?: string } = {}): Promise<Api> {
+    return this.post("/token-profiles/preview", { profile, user_id: userId, ...(options.org ? { org: options.org } : {}) });
+  }
+
   hostedSource(page: string, options: { branding?: Body; form?: Body } = {}): Promise<Api> {
     return this.post("/hosted-source", { page, branding: options.branding, form: options.form });
   }

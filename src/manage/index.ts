@@ -22,6 +22,7 @@ import { Functions } from "./functions.js";
 import { Backups, Environments, Releases } from "./lifecycle.js";
 import { Mail, MailTemplates } from "./mail.js";
 import { Alarms, Health, Observability, StatusPage } from "./observe.js";
+import { Dashboards, RealtimeChannels } from "./realtime.js";
 
 export class Manage {
   // data
@@ -47,6 +48,9 @@ export class Manage {
   readonly cache: Cache;
   readonly mail: Mail;
   readonly mailTemplates: MailTemplates;
+  // realtime and dashboards
+  readonly realtimeChannels: RealtimeChannels;
+  readonly dashboards: Dashboards;
   // access
   readonly keys: Keys;
   readonly secrets: Secrets;
@@ -87,6 +91,8 @@ export class Manage {
     this.cache = new Cache(http, environment);
     this.mail = new Mail(http, environment);
     this.mailTemplates = new MailTemplates(http, environment);
+    this.realtimeChannels = new RealtimeChannels(http, environment);
+    this.dashboards = new Dashboards(http, environment);
     this.keys = new Keys(http, environment);
     this.secrets = new Secrets(http, environment);
     this.domains = new Domains(http, environment);
@@ -123,3 +129,4 @@ export * from "./functions.js";
 export * from "./lifecycle.js";
 export * from "./mail.js";
 export * from "./observe.js";
+export * from "./realtime.js";
