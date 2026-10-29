@@ -40,7 +40,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "pawabase-types": "./dist/esm/cli/gen-types.js"
+    "pawabase-types": "dist/esm/cli/gen-types.js"
   },
   "files": [
     "dist",
