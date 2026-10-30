@@ -100,6 +100,29 @@ export class Users extends AdminService {
     return this.get(seg("users", userId, "history"));
   }
 
+  /** What the user did over the last `weeks` weeks (at most 53): counts per day by kind (`signin`, `account`, `request`), totals, and a
+   *  summary (last seen, failures, busiest hour, most used routes). */
+  activity(userId: string, options: { weeks?: number } = {}): Promise<Api> {
+    return this.get(seg("users", userId, "activity"), { weeks: options.weeks ?? 53 });
+  }
+
+  /** The user's sign-ins, account changes and requests in one feed, newest first. `type`: `signin`, `account` or `request`.
+   *  Pass the answer's `next_before` as `before` for the next page. */
+  timeline(userId: string, options: { type?: "signin" | "account" | "request"; limit?: number; before?: string } = {}): Promise<Api> {
+    return this.get(seg("users", userId, "timeline"), { type: options.type, limit: options.limit ?? 50, before: options.before });
+  }
+
+  /** Everything the auth service holds about the user, as JSON (a data-access request). Records that the request was handled.
+   *  Rows in your own tables are not included: they are your application's to export. */
+  exportData(userId: string): Promise<Api> {
+    return this.post(seg("users", userId, "privacy", "export"));
+  }
+
+  /** Delete the user and clear everything that could identify them (an erasure request). Final. `confirm` is their email address. */
+  eraseData(userId: string, confirm: string): Promise<Api> {
+    return this.post(seg("users", userId, "privacy", "erase"), { confirm });
+  }
+
   /** Remove the user's second factors, so they can sign in with a password alone and enrol again. */
   resetMfa(userId: string): Promise<Api> {
     return this.post(seg("users", userId, "mfa", "reset"));
@@ -134,6 +157,13 @@ export class Users extends AdminService {
   /** The user's own API keys (never the secrets). */
   apiKeys(userId: string): Promise<Api> {
     return this.get(seg("users", userId, "api-keys"));
+  }
+}
+
+export class Privacy extends AdminService {
+  /** The data requests handled so far (exports and erasures). They hold no personal data: the person's id and a hash of their address. */
+  requests(options: { limit?: number } = {}): Promise<Api> {
+    return this.get("/privacy/requests", { limit: options.limit ?? 50 });
   }
 }
 
@@ -281,6 +311,7 @@ export class Admin {
   readonly apiKeys: ApiKeys;
   readonly devices: Devices;
   readonly insight: Insight;
+  readonly privacy: Privacy;
 
   constructor(
     private readonly http: HttpClient,
@@ -294,6 +325,7 @@ export class Admin {
     this.apiKeys = new ApiKeys(http, environment);
     this.devices = new Devices(http, environment);
     this.insight = new Insight(http, environment);
+    this.privacy = new Privacy(http, environment);
   }
 
   /** The same services for another environment the key may manage. */

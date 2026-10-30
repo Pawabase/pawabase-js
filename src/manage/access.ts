@@ -15,8 +15,8 @@ export class Keys extends Service {
   }
 
   /**
-   * Make a key; the key itself is in the answer once. `scopes` limit what it may do (`resource:read`, `functions:invoke`…),
-   * `allowedIps` and `allowedRoutes` (`"GET /rest/v1/orders"`, `"/functions/v1/*"`) limit where and what it may call.
+   * Make a key; the key itself is in the answer once. `scopes` limit what it may do (`resource:read`, `routes:invoke`…),
+   * `allowedIps` and `allowedRoutes` (`"GET /rest/v1/orders"`, `"/flows/v1/*"`) limit where and what it may call.
    */
   create(name: string, options: { role?: "publishable" | "secret"; scopes?: string[]; expiresAt?: When; allowedIps?: string[]; allowedRoutes?: string[] } = {}): Promise<Api> {
     return this.post("/keys", {
@@ -39,7 +39,7 @@ export class Keys extends Service {
   }
 }
 
-/** Secrets functions and flows read (`ctx.runtime.secret(name)`). Values are never returned. */
+/** Secrets flows read (`ctx.runtime.secret(name)`). Values are never returned. */
 export class Secrets extends Service {
   list(): Promise<Api> {
     return this.get("/secrets");

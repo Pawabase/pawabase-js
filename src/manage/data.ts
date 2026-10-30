@@ -100,7 +100,7 @@ export class Schema extends Service {
   }
 }
 
-/** Named access policies (conditions) that resources, buckets, channels and functions refer to. */
+/** Named access policies (conditions) that resources, buckets and channels refer to. */
 export class Policies extends Definitions {
   protected override readonly kind = "policies";
 }

@@ -29,7 +29,7 @@ export type {
   ResourceTypes,
 } from "./data.js";
 
-export { FlowsClient, FunctionsClient, RoutesClient } from "./functions.js";
+export { FlowsClient, RoutesClient } from "./functions.js";
 export type { CallOptions, RouteOptions } from "./functions.js";
 
 export { BucketClient, StorageClient } from "./files.js";

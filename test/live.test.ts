@@ -256,12 +256,11 @@ describe("live: auth and policies", { skip: !live }, () => {
     assert.ok(Array.isArray(rows));
   });
 
-  test("functions and flows", async () => {
+  test("flows", async () => {
     const db = newClient();
-    assert.deepEqual(await db.functions.invoke("hello", { name: "SDK" }), { message: "Hello, SDK!", project: "demo", env: "development" });
     const who = await db.flows.run<{ auth: { authenticated: boolean } }>("whoami", { a: 1 });
     assert.equal(who.auth.authenticated, false);
-    await assert.rejects(db.functions.invoke("nope"), NotFoundError);
+    await assert.rejects(db.flows.run("nope"), NotFoundError);
     const user = newClient();
     await user.auth.signUp({ email: `f-${unique()}@example.com`, password: "Sdk!pass-1234" });
     const signedIn = await user.flows.run<{ auth: { authenticated: boolean; email: string } }>("whoami");

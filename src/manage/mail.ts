@@ -1,6 +1,6 @@
 import { Definitions, Service, type Api } from "./base.js";
 
-/** Templates (subject, HTML, text) for the mail flows, functions and sign-in send. */
+/** Templates (subject, HTML, text) for the mail flows and sign-in send. */
 export class MailTemplates extends Definitions {
   protected override readonly kind = "mail-templates";
 }

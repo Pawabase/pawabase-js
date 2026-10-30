@@ -24,55 +24,6 @@ function pass(options: CallOptions): {
   };
 }
 
-export interface FetchOptions extends CallOptions {
-  method?: string;
-  query?: Record<string, QueryValue | QueryValue[]>;
-  /** An object is sent as JSON; strings, `Blob`, `FormData`, buffers and streams as they are. */
-  body?: unknown;
-  /** Run the function deployed on this branch (`x-pawabase-branch`). */
-  branch?: string;
-}
-
-/** Functions you wrote in your project's code, invoked at `/functions/v1/<name>`. */
-export class FunctionsClient {
-  constructor(private readonly http: HttpClient) {}
-
-  /**
-   * Call a function and return what it returned. The API key needs the
-   * `functions:invoke` scope (an unrestricted key has it).
-   */
-  async invoke<T = unknown>(name: string, input?: unknown, options: CallOptions = {}): Promise<T> {
-    const body = await this.http.request<{ data: T } | undefined>({
-      method: "POST",
-      path: `/functions/v1/${encodePath(name)}`,
-      body: input === undefined ? undefined : input,
-      ...pass(options),
-    });
-    return (body as { data: T } | undefined)?.data as T;
-  }
-
-  /**
-   * Call an HTTP function (`functions/<name>/index.ts`) with any method and path, and get its `Response` as it is — status, headers
-   * and a streaming body. An error status is returned, not thrown; the API key and the signed-in user's token are sent as for any call.
-   *
-   * ```ts
-   * const res = await pawabase.functions.fetch("orders", "/42/items", { method: "POST", body: { sku: "A1" } });
-   * if (res.ok) console.log(await res.json());
-   * ```
-   */
-  fetch(name: string, path = "/", options: FetchOptions = {}): Promise<Response> {
-    const rest = path === "/" || path === "" ? "" : path.startsWith("/") ? path : `/${path}`;
-    return this.http.send({
-      method: options.method ?? (options.body === undefined ? "GET" : "POST"),
-      path: `/functions/v1/${encodePath(name)}${rest}`,
-      ...(options.query ? { query: options.query } : {}),
-      ...(options.body !== undefined ? { body: options.body } : {}),
-      ...pass({ ...options, headers: { ...(options.branch ? { "x-pawabase-branch": options.branch } : {}), ...options.headers } }),
-      throwOnError: false,
-    });
-  }
-}
-
 /**
  * Flows with an HTTP trigger that has no path, invoked at `/flows/v1/<name>`.
  * (Flows bound to a path are reached as routes, see {@link RoutesClient}.)

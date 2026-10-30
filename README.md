@@ -1,7 +1,7 @@
 # @pawabase/client
 
 The official TypeScript client for [Pawabase](https://pawabase.com): records, auth, storage,
-functions, flows and realtime, with typed errors, safe retries and one shared session.
+flows and realtime, with typed errors, safe retries and one shared session.
 
 - **Zero dependencies.** Standard `fetch` and `WebSocket` only. Tested on Node 26 and against a live stack; it uses no Node-only APIs in the library, so browsers and other runtimes with `fetch` should work (bring a `storage` on React Native).
 - **Typed end to end.** Generate a `Database` type from your project and resource names, rows, inserts and filters are checked.
@@ -31,7 +31,7 @@ const { data, total } = await pawabase
 
 ## Contents
 
-- [Keys](#keys) · [Records](#records) · [Auth](#auth) · [Storage](#storage) · [Functions, flows and routes](#functions-flows-and-routes) · [Realtime](#realtime)
+- [Keys](#keys) · [Records](#records) · [Auth](#auth) · [Storage](#storage) · [Flows and routes](#flows-and-routes) · [Realtime](#realtime)
 - [Managing an environment](#managing-an-environment-secret-key) · [Types](#types) · [Errors](#errors) · [Retries and timeouts](#retries-and-timeouts) · [Servers and SSR](#servers-and-ssr) · [Testing](#testing-your-app)
 
 ## Keys
@@ -150,10 +150,9 @@ const slot = await avatars.createSignedUploadUrl("u1/new.png", { contentType: "i
 await avatars.uploadToSignedUrl(slot.url, file);               // sends no key: the URL is the credential
 ```
 
-## Functions, flows and routes
+## Flows and routes
 
 ```ts
-await pawabase.functions.invoke<{ total: number }>("price", { sku: "a" });   // unwraps { data }
 await pawabase.flows.run("whoami");                                          // the flow's response body
 await pawabase.routes.post("checkout/start", { cart: 1 }, { query: { dry: true } });
 await pawabase.request("GET", "/v1/anything");                               // raw, with auth and retries
@@ -214,13 +213,11 @@ await a.orgs.addMember("acme", { email: "ada@example.com", role: "admin" });
 ```
 
 `manage()` groups the platform by what you are doing: **data** (`resources`, `schema`, `policies`, `schemas`, `transformers`, `routes`, `database`, `runtime`),
-**automation** (`flows`, `schedules`, `subscriptions`, `events`, `webhooks`, `inboundHooks`, `jobs`, `functions`), **files and mail** (`buckets`, `cache`, `mail`,
+**automation** (`flows`, `schedules`, `subscriptions`, `events`, `webhooks`, `inboundHooks`, `jobs`), **files and mail** (`buckets`, `cache`, `mail`,
 `mailTemplates`), **access** (`keys`, `secrets`, `domains`, `firewall`), **observe** (`observability`, `alarms`, `statusPage`, `health`) and **lifecycle**
 (`environments`, `releases`, `backups`). Definitions (`flows`, `policies`, `webhooks`…) share `list`, `getOne`, `create`, `replace` and `remove`, and take
-`{ branch }` to work on a feature branch. `admin()` has `users`, `roles`, `orgs`, `invitations`, `sessions`, `apiKeys`, `devices` and `insight`
-(events, statistics, identity backup, hosted pages). Both refuse a publishable key, and a key manages only its own environment.
-
-To write the functions themselves in TypeScript, see [`@pawabase/functions`](https://github.com/Pawabase/pawabase-functions-js).
+`{ branch }` to work on a feature branch. `admin()` has `users`, `roles`, `orgs`, `invitations`, `sessions`, `apiKeys`, `devices`, `privacy` and `insight`
+(events, statistics, identity backup, hosted pages). `admin().users` also reads a person's `activity()` and `timeline()` (sign-ins, account changes and requests) and handles data requests with `exportData()` and `eraseData()`. Both refuse a publishable key, and a key manages only its own environment.
 
 ## Types
 

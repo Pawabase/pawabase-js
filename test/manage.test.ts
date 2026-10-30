@@ -170,3 +170,25 @@ test("key scopes and token profile previews", async () => {
   assert.equal(last().path, `${BASE}/auth/token-profiles/preview`);
   assert.deepEqual(last().json, { profile: { name: "billing" }, user_id: "u1", org: "acme" });
 });
+
+test("activity, the timeline and privacy requests", async () => {
+  const { client, fake } = await secret();
+  const a = admin(client);
+  const last = () => fake.requests[fake.requests.length - 1]!;
+  await a.users.activity("u1", { weeks: 10 });
+  assert.equal(last().method, "GET");
+  assert.equal(last().path, `${BASE}/auth/users/u1/activity`);
+  assert.match(last().url ?? last().path, /weeks=10|activity/);
+  await a.users.timeline("u1", { type: "account", before: "2026-10-30T10:00:00+00:00" });
+  assert.equal(last().path, `${BASE}/auth/users/u1/timeline`);
+  await a.users.exportData("u1");
+  assert.equal(last().method, "POST");
+  assert.equal(last().path, `${BASE}/auth/users/u1/privacy/export`);
+  await a.users.eraseData("u1", "a@b.io");
+  assert.equal(last().path, `${BASE}/auth/users/u1/privacy/erase`);
+  assert.deepEqual(last().json, { confirm: "a@b.io" });
+  await a.privacy.requests({ limit: 5 });
+  assert.equal(last().method, "GET");
+  assert.equal(last().path, `${BASE}/auth/privacy/requests`);
+  assert.equal(a.withEnvironment("staging").privacy.environment, "staging");
+});

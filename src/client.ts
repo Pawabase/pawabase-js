@@ -2,7 +2,7 @@ import { AuthClient, type AuthOptions } from "./auth.js";
 import { ResourceClient, type AnyRow, type ResourceTypes } from "./data.js";
 import { ConfigError } from "./errors.js";
 import { StorageClient } from "./files.js";
-import { FlowsClient, FunctionsClient, RoutesClient } from "./functions.js";
+import { FlowsClient, RoutesClient } from "./functions.js";
 import { HttpClient, type FetchLike, type Hooks, type RetryOptions, type TokenProvider } from "./http.js";
 import { RealtimeClient, type RealtimeOptions } from "./realtime.js";
 import { MemoryStorage } from "./session-store.js";
@@ -72,8 +72,6 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
   readonly auth: AuthClient;
   /** Storage buckets. */
   readonly storage: StorageClient;
-  /** Functions: `/functions/v1`. */
-  readonly functions: FunctionsClient;
   /** Flows with a pathless HTTP trigger: `/flows/v1`. */
   readonly flows: FlowsClient;
   /** Custom routes: `/rest/v1/<path>`. */
@@ -126,7 +124,6 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
     });
     config.tokens = stateless ? staticTokens(options.accessToken as NonNullable<ClientOptions["accessToken"]>) : this.auth;
     this.storage = new StorageClient(this.http);
-    this.functions = new FunctionsClient(this.http);
     this.flows = new FlowsClient(this.http);
     this.routes = new RoutesClient(this.http);
     this.realtime = new RealtimeClient(this.http, stateless ? null : this.auth, {

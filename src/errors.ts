@@ -3,7 +3,7 @@
  *
  * Pawabase answers errors in several shapes: a bare string (most `4xx`), a bare
  * array of validation issues (`422`), an `{error, message, details}` object
- * (functions, flows, the gateway) and Akountz's own `{detail}` bodies. The
+ * (flows, the gateway) and Akountz's own `{detail}` bodies. The
  * client normalises all of them into one class hierarchy, so application code
  * checks `error.status`, `error.code` or `instanceof` and never parses a body.
  */

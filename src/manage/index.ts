@@ -18,7 +18,6 @@ import { Domains, Firewall, Keys, Secrets } from "./access.js";
 import { Events, Flows, InboundHooks, Jobs, Schedules, Subscriptions, Webhooks } from "./automation.js";
 import { Database, Policies, Resources, Routes, Runtime, Schema, Schemas, Transformers } from "./data.js";
 import { Buckets, Cache } from "./files.js";
-import { Functions } from "./functions.js";
 import { Backups, Environments, Releases } from "./lifecycle.js";
 import { Mail, MailTemplates } from "./mail.js";
 import { Alarms, Health, Observability, StatusPage } from "./observe.js";
@@ -42,7 +41,6 @@ export class Manage {
   readonly webhooks: Webhooks;
   readonly inboundHooks: InboundHooks;
   readonly jobs: Jobs;
-  readonly functions: Functions;
   // files and mail
   readonly buckets: Buckets;
   readonly cache: Cache;
@@ -86,7 +84,6 @@ export class Manage {
     this.webhooks = new Webhooks(http, environment);
     this.inboundHooks = new InboundHooks(http, environment);
     this.jobs = new Jobs(http, environment);
-    this.functions = new Functions(http, environment);
     this.buckets = new Buckets(http, environment);
     this.cache = new Cache(http, environment);
     this.mail = new Mail(http, environment);
@@ -125,7 +122,6 @@ export * from "./automation.js";
 export * from "./base.js";
 export * from "./data.js";
 export * from "./files.js";
-export * from "./functions.js";
 export * from "./lifecycle.js";
 export * from "./mail.js";
 export * from "./observe.js";

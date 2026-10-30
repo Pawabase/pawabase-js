@@ -263,18 +263,16 @@ test("routes call custom paths with query and body", async () => {
   db.dispose();
 });
 
-test("functions unwrap {data}; flows return the body as sent", async () => {
-  const { fake, db } = await client((req) => (req.path.startsWith("/functions/") ? { body: { data: { total: 42 } } } : { body: { auth: { authenticated: true } } }));
-  assert.deepEqual(await db.functions.invoke("price", { sku: "a" }), { total: 42 });
+test("flows return the body as sent", async () => {
+  const { fake, db } = await client(() => ({ body: { auth: { authenticated: true } } }));
   assert.deepEqual(await db.flows.run("whoami"), { auth: { authenticated: true } });
-  assert.equal(fake.requests[0]!.path, "/functions/v1/price");
-  assert.equal(fake.requests[1]!.path, "/flows/v1/whoami");
-  assert.equal(fake.requests[1]!.raw.length, 0, "no body is sent when there is no input");
+  assert.equal(fake.requests[0]!.path, "/flows/v1/whoami");
+  assert.equal(fake.requests[0]!.raw.length, 0, "no body is sent when there is no input");
   db.dispose();
 });
 
-test("a function failure keeps its code and details", async () => {
+test("a flow failure keeps its code and details", async () => {
   const { db } = await client(() => ({ status: 502, body: { error: "upstream_failed", message: "payments said no", details: { attempt: 2 } } }));
-  await assert.rejects(db.functions.invoke("charge"), (e: unknown) => (e as { code: string; details: unknown }).code === "upstream_failed");
+  await assert.rejects(db.flows.run("charge"), (e: unknown) => (e as { code: string; details: unknown }).code === "upstream_failed");
   db.dispose();
 });
