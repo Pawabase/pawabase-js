@@ -478,3 +478,39 @@ test("integration tokens are issued for the session and verified with the public
   assert.equal(fake.requests[1]!.path, "/auth/v1/token-keys/production/jwks");
   client.dispose();
 });
+
+test("a machine trades its key for a token without keeping a session", async () => {
+  const fake = await serve((req) =>
+    req.path === "/auth/v1/token"
+      ? { body: { access_token: "t1", token_type: "Bearer", expires_in: 900, scope: "orders:read", machine: { id: "m1", name: "bot", kind: "agent" } } }
+      : undefined,
+  );
+  const client = memoryClient(fake.url);
+  const got = await client.auth.machine.token({ clientId: "m1", clientSecret: "pbm_secret", scope: "orders:read" });
+  assert.deepEqual(fake.requests[0]!.json, { grant_type: "client_credentials", client_id: "m1", client_secret: "pbm_secret", scope: "orders:read" });
+  assert.equal(fake.requests[0]!.headers["authorization"], undefined);
+  assert.equal(got.accessToken, "t1");
+  assert.equal(got.expiresIn, 900);
+  assert.equal(got.machine.kind, "agent");
+  assert.equal(await client.auth.getSession(), null);
+  client.dispose();
+});
+
+test("asMachine signs in once, reuses the token and sends it as the bearer", async () => {
+  const fake = await serve((req) =>
+    req.path === "/auth/v1/token"
+      ? { body: { access_token: "agent-token", token_type: "Bearer", expires_in: 900, scope: "", machine: { id: "m1", name: "bot", kind: "agent" } } }
+      : { body: { data: [] } },
+  );
+  const client = memoryClient(fake.url);
+  const agent = client.asMachine({ clientId: "m1", clientSecret: "pbm_secret" });
+  await agent.request("GET", "/rest/v1/orders");
+  await agent.request("GET", "/rest/v1/orders");
+  const tokenCalls = fake.requests.filter((r) => r.path === "/auth/v1/token");
+  assert.equal(tokenCalls.length, 1);
+  const data = fake.requests.filter((r) => r.path === "/rest/v1/orders");
+  assert.equal(data.length, 2);
+  assert.equal(data[0]!.headers["authorization"], "Bearer agent-token");
+  agent.dispose();
+  client.dispose();
+});

@@ -154,6 +154,32 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
   }
 
   /**
+   * A client that acts as a machine (a service or an AI agent). It signs in with the machine's id and key, keeps the token until shortly
+   * before it expires, and signs in again when it must. It keeps no user session.
+   *
+   * ```ts
+   * const agent = pawabase.asMachine({ clientId: process.env.PB_MACHINE_ID!, clientSecret: process.env.PB_MACHINE_KEY! });
+   * await agent.from("orders").eq("status", "open");
+   * ```
+   */
+  asMachine(input: { clientId: string; clientSecret: string; scope?: string }): PawabaseClient<DB> {
+    let cached: { token: string; until: number } | null = null;
+    let pending: Promise<string> | null = null;
+    const fetchToken = async (): Promise<string> => {
+      const got = await this.auth.machine.token(input);
+      cached = { token: got.accessToken, until: Date.now() + Math.max(got.expiresIn - 30, 1) * 1000 };
+      return got.accessToken;
+    };
+    return this.asUser(async () => {
+      if (cached && cached.until > Date.now()) return cached.token;
+      pending ??= fetchToken().finally(() => {
+        pending = null;
+      });
+      return pending;
+    });
+  }
+
+  /**
    * A raw request to any path on the gateway, with the key and the user's token attached,
    * the retry policy and the typed errors applied. For endpoints the client has no method for.
    */

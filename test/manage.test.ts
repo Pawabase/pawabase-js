@@ -192,3 +192,23 @@ test("activity, the timeline and privacy requests", async () => {
   assert.equal(last().path, `${BASE}/auth/privacy/requests`);
   assert.equal(a.withEnvironment("staging").privacy.environment, "staging");
 });
+
+test("machine administration creates machines and keys under the environment", async () => {
+  const { client, fake } = await secret();
+  const a = admin(client);
+  const last = () => fake.requests[fake.requests.length - 1]!;
+  await a.machines.create({ name: "report-bot", kind: "agent", roles: ["reader"], appMetadata: { team: "ops" } });
+  assert.equal(last().method, "POST");
+  assert.equal(last().path, `${BASE}/auth/machines`);
+  assert.deepEqual(last().json, { name: "report-bot", kind: "agent", roles: ["reader"], app_metadata: { team: "ops" } });
+  await a.machines.disable("m1");
+  assert.equal(last().method, "PATCH");
+  assert.equal(last().path, `${BASE}/auth/machines/m1`);
+  assert.deepEqual(last().json, { disabled: true });
+  await a.machines.createKey("m1", { name: "prod", scopes: ["orders:*"], expiresInDays: 30 });
+  assert.equal(last().path, `${BASE}/auth/machines/m1/keys`);
+  assert.deepEqual(last().json, { name: "prod", scopes: ["orders:*"], expires_in_days: 30 });
+  await a.machines.revokeKey("m1", "k1");
+  assert.equal(last().method, "DELETE");
+  assert.equal(last().path, `${BASE}/auth/machines/m1/keys/k1`);
+});

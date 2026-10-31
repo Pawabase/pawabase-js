@@ -118,7 +118,7 @@ and across tabs the Web Locks API serialises it where the browser has it (tab-to
 
 Also: `signInWithMagicLink` / `verifyMagicLink`, `requestPasswordReset` / `resetPassword`, `verifyEmail`,
 `resendVerification`, `confirmEmailChange`, `mfa.*` (enroll, verify, disable, recovery codes), `sessions.*`,
-`orgs.*` (members, invitations, teams), `devices.*`, `apiKeys.*` (keys a user makes for themselves), `exchangeCode(code)`, `switchOrg(slug)`, `settings()`.
+`orgs.*` (members, invitations, teams), `devices.*`, `apiKeys.*` (keys a user makes for themselves), `machine.token()` and `asMachine({ clientId, clientSecret })` (a service or AI agent signing in with its client id and key), `exchangeCode(code)`, `switchOrg(slug)`, `settings()`.
 
 Also: **guest sessions** (`signInAnonymously()`, then `upgradeAnonymous({ email, password })` keeps what the guest made), **emailed codes**
 (`sendEmailCode({ email })`, `verifyEmailCode({ email, code })`), **passkeys** (in a browser `auth.passkeys.register()` and
@@ -216,7 +216,7 @@ await a.orgs.addMember("acme", { email: "ada@example.com", role: "admin" });
 **automation** (`flows`, `schedules`, `subscriptions`, `events`, `webhooks`, `inboundHooks`, `jobs`), **files and mail** (`buckets`, `cache`, `mail`,
 `mailTemplates`), **access** (`keys`, `secrets`, `domains`, `firewall`), **observe** (`observability`, `alarms`, `statusPage`, `health`) and **lifecycle**
 (`environments`, `releases`, `backups`). Definitions (`flows`, `policies`, `webhooks`…) share `list`, `getOne`, `create`, `replace` and `remove`, and take
-`{ branch }` to work on a feature branch. `admin()` has `users`, `roles`, `orgs`, `invitations`, `sessions`, `apiKeys`, `devices`, `privacy` and `insight`
+`{ branch }` to work on a feature branch. `admin()` has `users`, `roles`, `orgs`, `invitations`, `sessions`, `apiKeys`, `machines`, `devices`, `privacy` and `insight`
 (events, statistics, identity backup, hosted pages). `admin().users` also reads a person's `activity()` and `timeline()` (sign-ins, account changes and requests) and handles data requests with `exportData()` and `eraseData()`. Both refuse a publishable key, and a key manages only its own environment.
 
 ## Types

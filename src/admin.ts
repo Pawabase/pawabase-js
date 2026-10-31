@@ -262,6 +262,76 @@ export class ApiKeys extends AdminService {
   }
 }
 
+export interface NewMachine {
+  name: string;
+  /** `agent` for an AI agent, `service` (default) for a job, backend or pipeline. */
+  kind?: "service" | "agent";
+  description?: string;
+  /** Roles whose permissions the machine holds. */
+  roles?: string[];
+  /** Permissions granted directly, on top of its roles. */
+  permissions?: string[];
+  /** An organization the machine belongs to. */
+  org?: string;
+  /** Visible to your server and policies only. */
+  appMetadata?: Body;
+}
+
+/**
+ * Machine identities: services and AI agents that call your API as themselves, with roles and keys of their own. Turn them on in the
+ * directory settings (`directory.machines.enabled`).
+ */
+export class Machines extends AdminService {
+  list(): Promise<Api> {
+    return this.get("/machines");
+  }
+
+  /** One machine, with its keys (never the secrets). */
+  getMachine(machineId: string): Promise<Api> {
+    return this.get(seg("machines", machineId));
+  }
+
+  create(input: NewMachine): Promise<Api> {
+    const { appMetadata, ...rest } = input;
+    return this.post("/machines", { ...rest, ...(appMetadata ? { app_metadata: appMetadata } : {}) });
+  }
+
+  /** Change what is given. `roles` and `permissions` replace the existing lists. `org: null` removes the organization. */
+  update(
+    machineId: string,
+    input: { name?: string; description?: string; roles?: string[]; permissions?: string[]; org?: string | null; appMetadata?: Body; disabled?: boolean },
+  ): Promise<Api> {
+    const { appMetadata, ...rest } = input;
+    return this.patch(seg("machines", machineId), { ...rest, ...(appMetadata ? { app_metadata: appMetadata } : {}) });
+  }
+
+  /** Stop every key of the machine at once. */
+  disable(machineId: string): Promise<Api> {
+    return this.update(machineId, { disabled: true });
+  }
+
+  enable(machineId: string): Promise<Api> {
+    return this.update(machineId, { disabled: false });
+  }
+
+  delete(machineId: string): Promise<Api> {
+    return this.del(seg("machines", machineId));
+  }
+
+  /** Make a key for the machine. The secret is in the answer once (`key`) and never again; `client_id` is the machine's id. */
+  createKey(machineId: string, input: { name?: string; scopes?: string[]; expiresInDays?: number } = {}): Promise<Api> {
+    return this.post(seg("machines", machineId, "keys"), {
+      name: input.name ?? "",
+      scopes: input.scopes ?? [],
+      ...(input.expiresInDays ? { expires_in_days: input.expiresInDays } : {}),
+    });
+  }
+
+  revokeKey(machineId: string, keyId: string): Promise<Api> {
+    return this.del(seg("machines", machineId, "keys", keyId));
+  }
+}
+
 export class Devices extends AdminService {
   /** Recent devices people signed in from. */
   list(options: { limit?: number } = {}): Promise<Api> {
@@ -309,6 +379,7 @@ export class Admin {
   readonly invitations: Invitations;
   readonly sessions: Sessions;
   readonly apiKeys: ApiKeys;
+  readonly machines: Machines;
   readonly devices: Devices;
   readonly insight: Insight;
   readonly privacy: Privacy;
@@ -323,6 +394,7 @@ export class Admin {
     this.invitations = new Invitations(http, environment);
     this.sessions = new Sessions(http, environment);
     this.apiKeys = new ApiKeys(http, environment);
+    this.machines = new Machines(http, environment);
     this.devices = new Devices(http, environment);
     this.insight = new Insight(http, environment);
     this.privacy = new Privacy(http, environment);

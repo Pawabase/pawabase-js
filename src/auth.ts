@@ -149,6 +149,8 @@ export class AuthClient implements TokenProvider {
   readonly devices: AuthDevices;
   /** Keys a user makes for themselves to call the API as themselves. */
   readonly apiKeys: AuthApiKeys;
+  /** Sign a machine (a service or an AI agent) in with its client id and key. */
+  readonly machine: AuthMachine;
   /** Passkeys (WebAuthn): register one, sign in with one. */
   readonly passkeys: AuthPasskeys;
 
@@ -167,6 +169,7 @@ export class AuthClient implements TokenProvider {
     this.orgs = new AuthOrgs(http);
     this.devices = new AuthDevices(http);
     this.apiKeys = new AuthApiKeys(http);
+    this.machine = new AuthMachine(http);
     this.passkeys = new AuthPasskeys(http, (wire) => this.adopt(wire));
     this.ready = this.initialize();
     this.ready.catch(() => undefined);
@@ -1077,6 +1080,46 @@ class AuthDevices {
 
   async forget(deviceId: string): Promise<void> {
     await this.http.request({ method: "DELETE", path: `/auth/v1/user/devices/${encodeURIComponent(deviceId)}` });
+  }
+}
+
+/** What a machine gets for its credentials. */
+export interface MachineToken {
+  accessToken: string;
+  tokenType: "Bearer";
+  /** Seconds the token lives. */
+  expiresIn: number;
+  /** The permissions the token carries, space-separated. */
+  scope: string;
+  machine: { id: string; name: string; kind: "service" | "agent" };
+}
+
+class AuthMachine {
+  constructor(private readonly http: HttpClient) {}
+
+  /**
+   * The OAuth `client_credentials` grant: exchange a machine's id and one of its keys (`pbm_…`) for a short-lived access token.
+   * `scope` (space-separated permissions) asks for fewer permissions than the key allows; it never grants more. Keeps no session.
+   */
+  async token(input: { clientId: string; clientSecret: string; scope?: string }): Promise<MachineToken> {
+    const wire = await this.http.request<{
+      access_token: string;
+      token_type: "Bearer";
+      expires_in: number;
+      scope: string;
+      machine: MachineToken["machine"];
+    }>({
+      method: "POST",
+      path: "/auth/v1/token",
+      body: {
+        grant_type: "client_credentials",
+        client_id: input.clientId,
+        client_secret: input.clientSecret,
+        ...(input.scope ? { scope: input.scope } : {}),
+      },
+      auth: "none",
+    });
+    return { accessToken: wire.access_token, tokenType: wire.token_type, expiresIn: wire.expires_in, scope: wire.scope, machine: wire.machine };
   }
 }
 
