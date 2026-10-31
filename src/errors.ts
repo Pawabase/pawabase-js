@@ -277,6 +277,11 @@ export function errorFromResponse(input: {
     else if (typeof body["code"] === "string") code = body["code"] as string;
     if (typeof body["message"] === "string") message = body["message"] as string;
     else if (typeof detail === "string") message = detail;
+    // OpenAI-style bodies, which the AI gateway answers with: { error: { message, type, code } }.
+    if (isRecord(named)) {
+      if (!message && typeof named["message"] === "string") message = named["message"] as string;
+      if (typeof named["code"] === "string") code = named["code"] as string;
+    }
     if (Array.isArray(detail)) {
       issues = toIssues(detail);
       message ||= summarise(issues);

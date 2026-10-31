@@ -1,3 +1,4 @@
+import { AiClient } from "./ai.js";
 import { AuthClient, type AuthOptions } from "./auth.js";
 import { ResourceClient, type AnyRow, type ResourceTypes } from "./data.js";
 import { ConfigError } from "./errors.js";
@@ -72,6 +73,8 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
   readonly auth: AuthClient;
   /** Storage buckets. */
   readonly storage: StorageClient;
+  /** The AI gateway: chat and embedding models. */
+  readonly ai: AiClient;
   /** Flows with a pathless HTTP trigger: `/flows/v1`. */
   readonly flows: FlowsClient;
   /** Custom routes: `/rest/v1/<path>`. */
@@ -124,6 +127,7 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
     });
     config.tokens = stateless ? staticTokens(options.accessToken as NonNullable<ClientOptions["accessToken"]>) : this.auth;
     this.storage = new StorageClient(this.http);
+    this.ai = new AiClient(this.http);
     this.flows = new FlowsClient(this.http);
     this.routes = new RoutesClient(this.http);
     this.realtime = new RealtimeClient(this.http, stateless ? null : this.auth, {

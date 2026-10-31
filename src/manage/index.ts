@@ -15,6 +15,7 @@ import type { PawabaseClient } from "../client.js";
 import { ConfigError } from "../errors.js";
 import { isSecretKey } from "../util.js";
 import { Domains, Firewall, Keys, Secrets } from "./access.js";
+import { Ai } from "./ai.js";
 import { Events, Flows, InboundHooks, Jobs, Schedules, Subscriptions, Webhooks } from "./automation.js";
 import { Database, Policies, Resources, Routes, Runtime, Schema, Schemas, Transformers } from "./data.js";
 import { Buckets, Cache } from "./files.js";
@@ -59,6 +60,8 @@ export class Manage {
   readonly alarms: Alarms;
   readonly statusPage: StatusPage;
   readonly health: Health;
+  // ai
+  readonly ai: Ai;
   // lifecycle
   readonly environments: Environments;
   readonly releases: Releases;
@@ -98,6 +101,7 @@ export class Manage {
     this.alarms = new Alarms(http, environment);
     this.statusPage = new StatusPage(http, environment);
     this.health = new Health(http, environment);
+    this.ai = new Ai(http, environment);
     this.environments = new Environments(http, environment);
     this.releases = new Releases(http, environment);
     this.backups = new Backups(http, environment);

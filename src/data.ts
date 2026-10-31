@@ -392,6 +392,34 @@ export class ResourceClient<
     return id === undefined ? base : `${base}/${encodeURIComponent(String(id))}`;
   }
 
+  /**
+   * Records closest in meaning, closest first, each with a `distance` (smaller is closer). Give `text` (turned into a vector by the
+   * field's embedding model) or a `vector`. Vector fields are left out of the records unless you ask for them.
+   */
+  async similar(input: {
+    text?: string;
+    vector?: number[];
+    field?: string;
+    metric?: "cosine" | "l2" | "ip";
+    limit?: number;
+    maxDistance?: number;
+    signal?: AbortSignal | null;
+  }): Promise<{ data: Array<Row & { distance: number }>; metric: string; count: number }> {
+    return this.http.request({
+      method: "POST",
+      path: `${this.path()}/similar`,
+      body: {
+        ...(input.text !== undefined ? { text: input.text } : {}),
+        ...(input.vector !== undefined ? { vector: input.vector } : {}),
+        ...(input.field ? { field: input.field } : {}),
+        metric: input.metric ?? "cosine",
+        limit: input.limit ?? 10,
+        ...(input.maxDistance !== undefined ? { max_distance: input.maxDistance } : {}),
+      },
+      signal: input.signal ?? undefined,
+    });
+  }
+
   /** Start a query. Every filter and shape method below is a shortcut for `query().…`. */
   query(): QueryBuilder<Row> {
     return new QueryBuilder<Row>(this.http, this.name);
