@@ -127,9 +127,9 @@ export interface Team {
 /** One page of a list. */
 export interface Page<T> {
   data: T[];
-  /** The 1-based page number. */
-  page: number;
-  per_page: number;
+  /** The 1-based page number; `null` when the query turned paging off. */
+  page: number | null;
+  per_page: number | null;
   /**
    * How many records match for this caller. `null` when a per-row policy makes it unknowable
    * (and then pages can be short, or empty, with more behind them).

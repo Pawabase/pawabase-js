@@ -276,3 +276,12 @@ test("a flow failure keeps its code and details", async () => {
   await assert.rejects(db.flows.run("charge"), (e: unknown) => (e as { code: string; details: unknown }).code === "upstream_failed");
   db.dispose();
 });
+
+test("paginate(false) asks for every match and ignores page settings", async () => {
+  const { fake, db } = await client(() => ({ body: { data: [], page: null, per_page: null, total: 0 } }));
+  const result = await db.from("posts").eq("status", "live").perPage(5).page(3).paginate(false);
+  assert.equal(sent(fake).get("paginate"), "false");
+  assert.equal(sent(fake).get("per_page"), null);
+  assert.equal(sent(fake).get("page"), null);
+  assert.equal(result.page, null);
+});

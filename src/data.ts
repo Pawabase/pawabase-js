@@ -47,6 +47,8 @@ interface State {
   expand: string[];
   page: number;
   perPage: number | null;
+  /** False asks for every match in one response. */
+  paginate: boolean;
   /** An `in ()` with no values matches nothing: answered locally. */
   empty: boolean;
 }
@@ -121,6 +123,7 @@ export class QueryBuilder<Row = AnyRow> implements PromiseLike<Page<Row>> {
       expand: [],
       page: 1,
       perPage: null,
+      paginate: true,
       empty: false,
     },
     private readonly options: QueryOptions = {},
@@ -248,6 +251,14 @@ export class QueryBuilder<Row = AnyRow> implements PromiseLike<Page<Row>> {
     return this.with({ perPage });
   }
 
+  /**
+   * Turn paging off with `paginate(false)`: the response holds every match (up to 5000; the server refuses more, so narrow
+   * with filters). `page` and `per_page` come back `null`.
+   */
+  paginate(paginate = true): QueryBuilder<Row> {
+    return this.with({ paginate });
+  }
+
   /** Alias of {@link perPage}. */
   limit(count: number): QueryBuilder<Row> {
     return this.perPage(count);
@@ -266,15 +277,20 @@ export class QueryBuilder<Row = AnyRow> implements PromiseLike<Page<Row>> {
     if (this.state.sort.length) params["sort"] = this.state.sort.join(",");
     if (this.state.select) params["select"] = this.state.select.join(",");
     if (this.state.expand.length) params["expand"] = [...new Set(this.state.expand)].join(",");
-    if (this.state.page !== 1) params["page"] = this.state.page;
-    if (this.state.perPage !== null) params["per_page"] = this.state.perPage;
+    if (!this.state.paginate) params["paginate"] = "false";
+    else {
+      if (this.state.page !== 1) params["page"] = this.state.page;
+      if (this.state.perPage !== null) params["per_page"] = this.state.perPage;
+    }
     return params;
   }
 
   /** Run the query and return one page. `await`ing the builder does the same. */
   async execute(): Promise<Page<Row>> {
     if (this.state.empty) {
-      return { data: [], page: this.state.page, per_page: this.state.perPage ?? 20, total: 0 };
+      return this.state.paginate
+        ? { data: [], page: this.state.page, per_page: this.state.perPage ?? 20, total: 0 }
+        : { data: [], page: null, per_page: null, total: 0 };
     }
     return this.http.request<Page<Row>>({
       path: `/rest/v1/${encodePath(this.resource)}`,
@@ -341,13 +357,13 @@ export class QueryBuilder<Row = AnyRow> implements PromiseLike<Page<Row>> {
       seen += page.data.length;
       if (options.maxRecords !== undefined && seen >= options.maxRecords) return;
       if (page.total !== null) {
-        if (page.page * page.per_page >= page.total) return;
+        if ((page.page ?? 1) * (page.per_page ?? 0) >= page.total) return;
       } else {
         // Unknown total: a per-row policy filters after the page is read, so a short page proves nothing.
         empties = page.data.length === 0 ? empties + 1 : 0;
         if (empties >= stopAfterEmpty) return;
       }
-      query = query.page(page.page + 1);
+      query = query.page((page.page ?? 1) + 1);
     }
   }
 
@@ -433,6 +449,8 @@ export class ResourceClient<
     expand?: string[];
     page?: number;
     perPage?: number;
+    /** `false` returns every match in one response (up to 5000). */
+    paginate?: boolean;
     signal?: AbortSignal | null;
   } = {}): Promise<Page<Row>> {
     let query = this.query();
@@ -445,6 +463,7 @@ export class ResourceClient<
     if (params.expand) query = query.expand(...params.expand);
     if (params.page) query = query.page(params.page);
     if (params.perPage) query = query.perPage(params.perPage);
+    if (params.paginate === false) query = query.paginate(false);
     if (params.signal) query = query.withOptions({ signal: params.signal });
     return query.execute();
   }
