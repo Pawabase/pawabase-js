@@ -223,6 +223,34 @@ test("updateUser patches then returns the fresh user, and emits USER_UPDATED", a
   client.dispose();
 });
 
+test("setAvatar sends the image as it is, then returns the fresh user; removeAvatar deletes it", async () => {
+  let picture: string | null = null;
+  const fake = await serve((req) => {
+    if (req.path === "/auth/v1/token") return { body: sessionBody() };
+    if (req.path === "/auth/v1/user/avatar") {
+      picture = req.method === "PUT" ? "http://x/storage/v1/files/dev/avatars/u1/a.png" : null;
+      return { body: user({ avatar_url: picture }) };
+    }
+    if (req.path === "/auth/v1/user") return { body: user({ avatar_url: picture }) };
+    return undefined;
+  });
+  const client = memoryClient(fake.url);
+  await client.auth.signInWithPassword({ email: "a@b.co", password: "pw" });
+  const events: string[] = [];
+  client.auth.onAuthStateChange((e) => events.push(e));
+  const bytes = new Uint8Array([137, 80, 78, 71]);
+  const set = await client.auth.setAvatar(new Blob([bytes], { type: "image/png" }));
+  const sent = fake.requests.find((r) => r.path === "/auth/v1/user/avatar")!;
+  assert.equal(sent.method, "PUT");
+  assert.equal(sent.headers["content-type"], "image/png");
+  assert.deepEqual([...sent.raw], [...bytes]);
+  assert.equal(set.avatar_url, "http://x/storage/v1/files/dev/avatars/u1/a.png");
+  assert.ok(events.includes("USER_UPDATED"));
+  const cleared = await client.auth.removeAvatar();
+  assert.equal(cleared.avatar_url, null);
+  client.dispose();
+});
+
 test("magic link: request, then verify returns a session", async () => {
   const fake = await serve((req) => {
     if (req.path === "/auth/v1/magic-link") return { body: { sent: true } };

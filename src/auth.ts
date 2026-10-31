@@ -750,6 +750,33 @@ export class AuthClient implements TokenProvider {
     return user;
   }
 
+  /**
+   * Set the signed-in user's picture from an image (PNG, JPEG, WebP or GIF). It is stored in the environment's public avatar
+   * bucket and `avatar_url` points at it; the previous picture is removed. Resolves the updated user.
+   */
+  async setAvatar(image: Blob | ArrayBuffer | ArrayBufferView, options: { contentType?: string } = {}): Promise<User> {
+    await this.ready;
+    const declared = options.contentType ?? (typeof Blob !== "undefined" && image instanceof Blob && image.type ? image.type : "");
+    await this.http.request({
+      method: "PUT",
+      path: "/auth/v1/user/avatar",
+      body: image,
+      headers: { "content-type": declared || "application/octet-stream" },
+    });
+    const user = await this.getUser();
+    this.emit("USER_UPDATED");
+    return user;
+  }
+
+  /** Remove the signed-in user's picture. */
+  async removeAvatar(): Promise<User> {
+    await this.ready;
+    await this.http.request({ method: "DELETE", path: "/auth/v1/user/avatar" });
+    const user = await this.getUser();
+    this.emit("USER_UPDATED");
+    return user;
+  }
+
   /** Send the confirmation email again. Always resolves the same way. */
   async resendVerification(input: { email: string; redirectTo?: string }): Promise<void> {
     await this.http.request({
