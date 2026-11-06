@@ -31,11 +31,10 @@ test("the management plane needs a secret key and an environment", async () => {
   assert.equal(m.withEnvironment("staging").flows.environment, "staging");
 });
 
-test("definitions use names, branches and encoded paths", async () => {
+test("definitions use names and encoded paths", async () => {
   const { m, last } = await secret();
-  await m.flows.list({ branch: "feat" });
+  await m.flows.list();
   assert.equal(last().path, `${BASE}/flows`);
-  assert.equal(last().query.get("branch"), "feat");
   await m.flows.replace("a b", { name: "a b" });
   assert.equal(last().method, "PUT");
   assert.equal(last().path, `${BASE}/flows/a%20b`);
@@ -44,7 +43,7 @@ test("definitions use names, branches and encoded paths", async () => {
   assert.equal(last().path, "/platform/v1/envs/staging/policies/p");
 });
 
-test("keys, secrets and the firewall send the bodies the server reads", async () => {
+test("keys and secrets send the bodies the server reads", async () => {
   const { m, last } = await secret();
   await m.keys.create("ci", { role: "secret", scopes: ["functions:invoke"], allowedIps: ["10.0.0.0/8"] });
   assert.deepEqual(last().json, { name: "ci", role: "secret", scopes: ["functions:invoke"], allowed_ips: ["10.0.0.0/8"], allowed_routes: [] });
@@ -54,16 +53,6 @@ test("keys, secrets and the firewall send the bodies the server reads", async ()
   await m.secrets.set("STRIPE_KEY", "v", { rotateEveryDays: 30 });
   assert.equal(last().method, "PUT");
   assert.deepEqual(last().json, { value: "v", description: "", rotate_every_days: 30 });
-  await m.firewall.addRule({ name: "Burst", action: "rate_limit", conditions: [{ field: "path", op: "starts_with", value: "/auth" }], rateLimit: { requests: 5, window_seconds: 60 } });
-  assert.equal(last().path, `${BASE}/firewall`);
-  assert.equal(last().json.action, "rate_limit");
-  assert.equal(last().json.logic, "all");
-  assert.equal(last().json.rate_limit.requests, 5);
-  await m.firewall.order(["a", "b"]);
-  assert.equal(last().method, "PUT");
-  assert.deepEqual(last().json, { ids: ["a", "b"] });
-  await m.firewall.bans({ includeExpired: true });
-  assert.equal(last().query.get("all"), "1");
 });
 
 test("jobs, cache and observability match the server's models", async () => {
@@ -94,13 +83,16 @@ test("lifecycle calls are project-wide or environment-scoped", async () => {
   assert.equal(last().path, "/platform/v1/envs/staging");
   assert.deepEqual(last().json, { settings: { a: 1 } });
   await m.environments.promote("staging", { include: ["flows"] });
-  assert.deepEqual(last().json, { to: "staging", include: ["flows"] });
+  assert.deepEqual(last().json, { to: "staging", include: ["flows"], dry_run: false });
   await m.backups.restoreSnapshot("s1", { strategy: "replace", confirm: "production" });
   assert.equal(last().path, `${BASE}/snapshots/s1/restore`);
   assert.equal(last().json.confirm, "production");
   assert.equal(last().json.safety_snapshot, true);
-  await m.releases.merge("feat");
-  assert.deepEqual(last().json, { target: "main", force: false });
+  await m.versions.release("v2", "staging", { notes: "n" });
+  assert.equal(last().path, `${BASE}/versions`);
+  assert.deepEqual(last().json, { name: "v2", from_env: "staging", notes: "n" });
+  await m.versions.retire("v2");
+  assert.equal(last().path, `${BASE}/versions/v2/retire`);
 });
 
 test("user administration is scoped to the environment", async () => {

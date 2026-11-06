@@ -14,12 +14,13 @@
 import type { PawabaseClient } from "../client.js";
 import { ConfigError } from "../errors.js";
 import { isSecretKey } from "../util.js";
-import { Domains, Firewall, Keys, Secrets } from "./access.js";
+import { Domains, Keys, Secrets } from "./access.js";
+import { AgentRuns, Agents, Connections, KnowledgeBases } from "./agents.js";
 import { Ai } from "./ai.js";
 import { Events, Flows, InboundHooks, Jobs, Schedules, Subscriptions, Webhooks } from "./automation.js";
-import { Database, Policies, Resources, Routes, Runtime, Schema, Schemas, Transformers } from "./data.js";
+import { Database, Policies, Resources, Routes, Schema, Schemas } from "./data.js";
 import { Buckets, Cache } from "./files.js";
-import { Backups, Environments, Releases } from "./lifecycle.js";
+import { Backups, Environments, Versions } from "./lifecycle.js";
 import { Mail, MailTemplates } from "./mail.js";
 import { Alarms, Health, Observability, StatusPage } from "./observe.js";
 import { Dashboards, RealtimeChannels } from "./realtime.js";
@@ -30,10 +31,8 @@ export class Manage {
   readonly schema: Schema;
   readonly policies: Policies;
   readonly schemas: Schemas;
-  readonly transformers: Transformers;
   readonly routes: Routes;
   readonly database: Database;
-  readonly runtime: Runtime;
   // automation
   readonly flows: Flows;
   readonly schedules: Schedules;
@@ -54,7 +53,6 @@ export class Manage {
   readonly keys: Keys;
   readonly secrets: Secrets;
   readonly domains: Domains;
-  readonly firewall: Firewall;
   // observe
   readonly observability: Observability;
   readonly alarms: Alarms;
@@ -62,9 +60,13 @@ export class Manage {
   readonly health: Health;
   // ai
   readonly ai: Ai;
+  readonly agents: Agents;
+  readonly agentRuns: AgentRuns;
+  readonly knowledgeBases: KnowledgeBases;
+  readonly connections: Connections;
   // lifecycle
   readonly environments: Environments;
-  readonly releases: Releases;
+  readonly versions: Versions;
   readonly backups: Backups;
 
   constructor(
@@ -76,10 +78,8 @@ export class Manage {
     this.schema = new Schema(http, environment);
     this.policies = new Policies(http, environment);
     this.schemas = new Schemas(http, environment);
-    this.transformers = new Transformers(http, environment);
     this.routes = new Routes(http, environment);
     this.database = new Database(http, environment);
-    this.runtime = new Runtime(http, environment);
     this.flows = new Flows(http, environment);
     this.schedules = new Schedules(http, environment);
     this.subscriptions = new Subscriptions(http, environment);
@@ -96,14 +96,17 @@ export class Manage {
     this.keys = new Keys(http, environment);
     this.secrets = new Secrets(http, environment);
     this.domains = new Domains(http, environment);
-    this.firewall = new Firewall(http, environment);
     this.observability = new Observability(http, environment);
     this.alarms = new Alarms(http, environment);
     this.statusPage = new StatusPage(http, environment);
     this.health = new Health(http, environment);
     this.ai = new Ai(http, environment);
+    this.agents = new Agents(http, environment);
+    this.agentRuns = new AgentRuns(http, environment);
+    this.knowledgeBases = new KnowledgeBases(http, environment);
+    this.connections = new Connections(http, environment);
     this.environments = new Environments(http, environment);
-    this.releases = new Releases(http, environment);
+    this.versions = new Versions(http, environment);
     this.backups = new Backups(http, environment);
   }
 

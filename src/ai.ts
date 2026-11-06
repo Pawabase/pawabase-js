@@ -10,6 +10,7 @@
  * Models are called by the name your environment gave them. Who may call each is the model's policy; servers (a secret key) always may.
  */
 import { ApiError } from "./errors.js";
+import { AgentsClient, KnowledgeClient } from "./agents.js";
 import type { HttpClient } from "./http.js";
 
 export interface ChatMessage {
@@ -70,7 +71,15 @@ function bodyOf(model: string, input: string | ChatMessage[], options: ChatOptio
 }
 
 export class AiClient {
-  constructor(private readonly http: HttpClient) {}
+  /** Agents the caller may run: `run`, `stream`, `get`, `decide`, `wait`. */
+  readonly agents: AgentsClient;
+  /** Knowledge bases the caller may search or add documents to. */
+  readonly knowledge: KnowledgeClient;
+
+  constructor(private readonly http: HttpClient) {
+    this.agents = new AgentsClient(http);
+    this.knowledge = new KnowledgeClient(http);
+  }
 
   /** The models the caller may use. */
   async models(): Promise<AiModelInfo[]> {

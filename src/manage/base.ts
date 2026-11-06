@@ -55,29 +55,29 @@ export class Service {
 
 /**
  * A kind of definition an environment holds (`flows`, `policies`, `webhooks`…): list, get, create, replace, remove.
- * Pass `branch` to work on a feature branch's draft instead of the live environment. A definition is addressed by its name
+ * A definition is addressed by its name
  * (inbound hooks: their slug).
  */
 export class Definitions extends Service {
   protected readonly kind: string = "";
 
-  list(options: { branch?: string } = {}): Promise<Api> {
-    return this.get(seg(this.kind), { branch: options.branch });
+  list(): Promise<Api> {
+    return this.get(seg(this.kind));
   }
 
-  getOne(key: string, options: { branch?: string } = {}): Promise<Api> {
-    return this.get(seg(this.kind, key), { branch: options.branch });
+  getOne(key: string): Promise<Api> {
+    return this.get(seg(this.kind, key));
   }
 
-  create(body: Body, options: { branch?: string } = {}): Promise<Api> {
-    return this.post(seg(this.kind), body, { branch: options.branch });
+  create(body: Body): Promise<Api> {
+    return this.post(seg(this.kind), body);
   }
 
-  replace(key: string, body: Body, options: { branch?: string } = {}): Promise<Api> {
-    return this.put(seg(this.kind, key), body, { branch: options.branch });
+  replace(key: string, body: Body): Promise<Api> {
+    return this.put(seg(this.kind, key), body);
   }
 
-  remove(key: string, options: { branch?: string } = {}): Promise<Api> {
-    return this.del(seg(this.kind, key), { branch: options.branch });
+  remove(key: string): Promise<Api> {
+    return this.del(seg(this.kind, key));
   }
 }

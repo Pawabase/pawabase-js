@@ -31,7 +31,7 @@ const { data, total } = await pawabase
 
 ## Contents
 
-- [Keys](#keys) · [Records](#records) · [Auth](#auth) · [Storage](#storage) · [Flows and routes](#flows-and-routes) · [Realtime](#realtime)
+- [Keys](#keys) · [Records](#records) · [Auth](#auth) · [Storage](#storage) · [Flows and routes](#flows-and-routes) · [Agents](#agents-and-knowledge) · [Realtime](#realtime)
 - [Managing an environment](#managing-an-environment-secret-key) · [Types](#types) · [Errors](#errors) · [Retries and timeouts](#retries-and-timeouts) · [Servers and SSR](#servers-and-ssr) · [Testing](#testing-your-app)
 
 ## Keys
@@ -158,6 +158,22 @@ await pawabase.routes.post("checkout/start", { cart: 1 }, { query: { dry: true }
 await pawabase.request("GET", "/v1/anything");                               // raw, with auth and retries
 ```
 
+## Agents and knowledge
+
+Agents run on the server with the tools, knowledge and approvals you gave them; who may run one is the agent's access policy.
+
+```ts
+const run = await pawabase.ai.agents.run("support", "How do I reset my password?", { thread });
+for await (const event of pawabase.ai.agents.stream("support", "Summarise my open tickets")) console.log(event);
+
+const queued = await pawabase.ai.agents.run("report", "Weekly summary", { background: true });
+const done = await pawabase.ai.agents.wait(queued.id);
+if (done.status === "waiting") await pawabase.ai.agents.decide(done.id, { approve: true });
+
+await pawabase.ai.knowledge.addDocument("docs", { url: "https://example.com/guide" });
+const hits = await pawabase.ai.knowledge.search("docs", "reset password", { limit: 3 });
+```
+
 ## Realtime
 
 ```ts
@@ -201,7 +217,7 @@ const pawabase = createClient({ url, apiKey: process.env.PAWABASE_SECRET_KEY!, e
 const m = manage(pawabase);
 
 await m.secrets.set("STRIPE_KEY", "sk_live_…");
-await m.firewall.ban("203.0.113.7", { seconds: 3600 });
+await m.agents.create({ name: "support", model: "chat", instructions: "Answer from the docs.", knowledge: ["docs"] });
 await m.jobs.replay({ job: "send_mail", sinceMinutes: 60, dryRun: true });
 await m.backups.snapshot("before-launch");
 await manage(pawabase, "staging").flows.list();            // the same API for another environment the key may manage
@@ -212,11 +228,10 @@ await a.users.update(userId, { disabled: true });
 await a.orgs.addMember("acme", { email: "ada@example.com", role: "admin" });
 ```
 
-`manage()` groups the platform by what you are doing: **data** (`resources`, `schema`, `policies`, `schemas`, `transformers`, `routes`, `database`, `runtime`),
-**automation** (`flows`, `schedules`, `subscriptions`, `events`, `webhooks`, `inboundHooks`, `jobs`), **files and mail** (`buckets`, `cache`, `mail`,
-`mailTemplates`), **access** (`keys`, `secrets`, `domains`, `firewall`), **observe** (`observability`, `alarms`, `statusPage`, `health`) and **lifecycle**
-(`environments`, `releases`, `backups`). Definitions (`flows`, `policies`, `webhooks`…) share `list`, `getOne`, `create`, `replace` and `remove`, and take
-`{ branch }` to work on a feature branch. `admin()` has `users`, `roles`, `orgs`, `invitations`, `sessions`, `apiKeys`, `machines`, `devices`, `privacy` and `insight`
+`manage()` groups the platform by what you are doing: **data** (`resources`, `schema`, `policies`, `schemas`, `routes`, `database`),
+**agents** (`agents`, `agentRuns`, `knowledgeBases`, `connections`), **automation** (`flows`, `schedules`, `subscriptions`, `events`, `webhooks`, `inboundHooks`, `jobs`), **files and mail** (`buckets`, `cache`, `mail`,
+`mailTemplates`), **access** (`keys`, `secrets`, `domains`), **observe** (`observability`, `alarms`, `statusPage`, `health`) and **lifecycle**
+(`environments`, `versions`, `backups`). Definitions (`flows`, `policies`, `webhooks`…) share `list`, `getOne`, `create`, `replace` and `remove`. `admin()` has `users`, `roles`, `orgs`, `invitations`, `sessions`, `apiKeys`, `machines`, `devices`, `privacy` and `insight`
 (events, statistics, identity backup, hosted pages). `admin().users` also reads a person's `activity()` and `timeline()` (sign-ins, account changes and requests) and handles data requests with `exportData()` and `eraseData()`. Both refuse a publishable key, and a key manages only its own environment.
 
 ## Types

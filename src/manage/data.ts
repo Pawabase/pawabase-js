@@ -110,11 +110,6 @@ export class Schemas extends Definitions {
   protected override readonly kind = "schemas";
 }
 
-/** Transformers that reshape a field's value on the way out (hide, mask, format). */
-export class Transformers extends Definitions {
-  protected override readonly kind = "transformers";
-}
-
 /** Custom HTTP routes under `/rest` that run a flow. */
 export class Routes extends Definitions {
   protected override readonly kind = "routes";
@@ -135,25 +130,25 @@ export class Database extends Service {
     return this.get(seg("database", "tables", table, "rows"), { limit: options.limit, offset: options.offset, sort: options.sort, ...options.filters });
   }
 
+  /** Saved queries: the SQL console's bookmarks. */
+  savedQueries(): Promise<Api> {
+    return this.get("/database/queries");
+  }
+
+  saveQuery(input: { name: string; sql: string; description?: string }): Promise<Api> {
+    return this.post("/database/queries", { name: input.name, sql: input.sql, description: input.description ?? "" });
+  }
+
+  updateQuery(queryId: string, input: { name: string; sql: string; description?: string }): Promise<Api> {
+    return this.put(seg("database", "queries", queryId), { name: input.name, sql: input.sql, description: input.description ?? "" });
+  }
+
+  deleteQuery(queryId: string): Promise<Api> {
+    return this.del(seg("database", "queries", queryId));
+  }
+
   /** Run one statement. A write needs `allowWrite`; it is audited and clears the environment's caches. */
   query(sql: string, params: unknown[] = [], options: { allowWrite?: boolean } = {}): Promise<Api> {
     return this.post("/database/query", { sql, params, allow_write: options.allowWrite ?? false });
-  }
-}
-
-/** The runtime capabilities a function sees, called remotely (what `pawabase emulate` uses). */
-export class Runtime extends Service {
-  call(method: string, args: unknown[] = [], kwargs: Body = {}, options: { asUser?: Body; branch?: string } = {}): Promise<Api> {
-    return this.post("/runtime/call", { method, args, kwargs, as_user: options.asUser ?? null, branch: options.branch ?? null });
-  }
-
-  /** `fetch`, `insert`, `execute`, `begin`, `commit`…, optionally inside a transaction (`tx`). */
-  sql(op: string, fields: Body = {}): Promise<Api> {
-    return this.post("/runtime/db", { op, ...fields });
-  }
-
-  /** Who a user access token belongs to. */
-  identify(token: string | null): Promise<Api> {
-    return this.post("/runtime/identify", { token });
   }
 }

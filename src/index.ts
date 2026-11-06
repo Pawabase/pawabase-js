@@ -2,6 +2,8 @@ export { PawabaseClient, createClient } from "./client.js";
 export type { ClientOptions, DatabaseShape } from "./client.js";
 
 export { AiClient } from "./ai.js";
+export { AgentsClient, KnowledgeClient } from "./agents.js";
+export type { AgentEvent, AgentRun, AgentRunOptions, AgentRunStatus, KnowledgeDocument, KnowledgeHit } from "./agents.js";
 export type { AiModelInfo, ChatCompletion, ChatMessage, ChatOptions } from "./ai.js";
 export { AuthClient } from "./auth.js";
 export type {

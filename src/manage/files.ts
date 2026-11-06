@@ -64,12 +64,23 @@ export class Buckets extends Definitions {
   revokeShare(bucket: string, shareId: string): Promise<Api> {
     return this.del(seg(this.kind, bucket, "shares", shareId));
   }
+
+  /** Make an empty folder (`prefix` like `reports/2026`). */
+  createFolder(bucket: string, prefix: string): Promise<Api> {
+    return this.post(seg(this.kind, bucket, "folders"), { prefix });
+  }
+
+  /** Remove a folder; it must be empty. */
+  deleteFolder(bucket: string, prefix: string): Promise<Api> {
+    return this.del(`${seg(this.kind, bucket, "folders")}/${prefix.split("/").filter(Boolean).map(encodeURIComponent).join("/")}`);
+  }
 }
 
 /** The environment's response cache. */
 export class Cache extends Service {
+  /** The project's cache statistics (not scoped to one environment). */
   stats(): Promise<Api> {
-    return this.get("/cache");
+    return this.project("GET", "/cache");
   }
 
   /** Drop cached responses by tag (`resource:posts`) or for whole resources. */

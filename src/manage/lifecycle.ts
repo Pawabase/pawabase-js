@@ -1,8 +1,5 @@
 import { Service, seg, type Api, type Body } from "./base.js";
 
-type When = Date | string;
-const iso = (value?: When): string | undefined => (value instanceof Date ? value.toISOString() : value);
-
 /** The project's environments (`development`, `production`, previews…). Most calls here are not scoped to the client's environment. */
 export class Environments extends Service {
   list(): Promise<Api> {
@@ -45,9 +42,9 @@ export class Environments extends Service {
     return this.del(seg("previews", preview));
   }
 
-  /** Copy this environment's definitions (never secrets or keys) to `to`. `include` limits the kinds (`flows`, `policies`, `resources`…). */
-  promote(to: string, options: { include?: string[] } = {}): Promise<Api> {
-    return this.post("/promote", { to, include: options.include });
+  /** Copy this environment's definitions (never secrets or keys) to `to`. `include` limits the kinds; `dryRun` only reports what would change. */
+  promote(to: string, options: { include?: string[]; dryRun?: boolean } = {}): Promise<Api> {
+    return this.post("/promote", { to, include: options.include, dry_run: options.dryRun ?? false });
   }
 
   /** Export definitions, roles and settings as a document another project can apply. */
@@ -66,70 +63,29 @@ export class Environments extends Service {
   }
 }
 
-/** Feature branches of the definitions, immutable revisions, API versions and releases. */
-export class Releases extends Service {
-  branches(): Promise<Api> {
-    return this.get("/branches");
+/**
+ * API versions served side by side. `v1` is always the live API; releasing another environment's definitions as `v2` serves them at
+ * `/rest/v2` over this environment's tables, until you retire it.
+ */
+export class Versions extends Service {
+  /** The live API first, then every released version. */
+  list(): Promise<Api> {
+    return this.get("/versions");
   }
 
-  createBranch(name: string, options: { fromBranch?: string; fromRevision?: string; protected?: boolean } = {}): Promise<Api> {
-    return this.post("/branches", { name, from_branch: options.fromBranch, from_revision: options.fromRevision, protected: options.protected ?? false });
+  /** Whether `fromEnv`'s definitions can be served here as a version, and what would be added or left out. */
+  check(fromEnv: string): Promise<Api> {
+    return this.post("/versions/check", { from_env: fromEnv });
   }
 
-  /** The branch's definitions as they stand now. */
-  draft(branch: string): Promise<Api> {
-    return this.get(seg("branches", branch, "draft"));
+  /** Serve `fromEnv`'s definitions as `/rest/<name>` (`v2`, `v3`…). A name is never reused. */
+  release(name: string, fromEnv: string, options: { notes?: string } = {}): Promise<Api> {
+    return this.post("/versions", { name, from_env: fromEnv, notes: options.notes ?? "" });
   }
 
-  merge(branch: string, options: { target?: string; force?: boolean } = {}): Promise<Api> {
-    return this.post(seg("branches", branch, "merge"), { target: options.target ?? "main", force: options.force ?? false });
-  }
-
-  revisions(): Promise<Api> {
-    return this.get("/revisions");
-  }
-
-  revision(revisionId: string): Promise<Api> {
-    return this.get(seg("revisions", revisionId));
-  }
-
-  /** Freeze the branch's draft as a revision. */
-  commit(branch: string, message = ""): Promise<Api> {
-    return this.post(seg("branches", branch, "revisions"), { message });
-  }
-
-  apiVersions(): Promise<Api> {
-    return this.get("/api-versions");
-  }
-
-  createApiVersion(name: string, options: { isDefault?: boolean } = {}): Promise<Api> {
-    return this.post("/api-versions", { name, is_default: options.isDefault ?? false });
-  }
-
-  /** `status`: draft, active, deprecated, sunset, disabled. */
-  updateApiVersion(name: string, changes: { status?: string; isDefault?: boolean; sunsetAt?: When }): Promise<Api> {
-    return this.patch(seg("api-versions", name), { status: changes.status, is_default: changes.isDefault, sunset_at: iso(changes.sunsetAt) });
-  }
-
-  rollbackApiVersion(name: string): Promise<Api> {
-    return this.post(seg("api-versions", name, "rollback"));
-  }
-
-  releases(): Promise<Api> {
-    return this.get("/releases");
-  }
-
-  /** Make a revision the live definitions of an API version. */
-  release(revisionId: string, apiVersion: string, name: string, options: { notes?: string; allowBreaking?: boolean } = {}): Promise<Api> {
-    return this.post("/releases", { revision_id: revisionId, api_version: apiVersion, name, notes: options.notes ?? "", allow_breaking: options.allowBreaking ?? false });
-  }
-
-  activate(releaseId: string): Promise<Api> {
-    return this.post(seg("releases", releaseId, "activate"));
-  }
-
-  deployments(): Promise<Api> {
-    return this.get("/deployments");
+  /** Stop serving a version. */
+  retire(name: string): Promise<Api> {
+    return this.post(seg("versions", name, "retire"));
   }
 }
 

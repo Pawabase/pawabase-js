@@ -68,8 +68,9 @@ export class Observability extends Service {
     return this.get("/metric-series", { metric, minutes: options.minutes ?? 60, period: options.period, compare: options.comparePrevious ? "previous" : undefined });
   }
 
+  /** The project's background workers (not scoped to one environment). */
   workers(): Promise<Api> {
-    return this.get("/workers");
+    return this.project("GET", "/workers");
   }
 
   /** What the environment is running with. */
@@ -77,8 +78,14 @@ export class Observability extends Service {
     return this.get("/configuration");
   }
 
+  /** What the project has used against what its plan allows (not scoped to one environment). */
   capacity(): Promise<Api> {
-    return this.get("/capacity");
+    return this.project("GET", "/capacity");
+  }
+
+  /** Bytes received and sent over the last `minutes`, and the endpoints, callers and requests that moved the most. */
+  bandwidth(options: { minutes?: number } = {}): Promise<Api> {
+    return this.get("/observability/bandwidth", options);
   }
 }
 
