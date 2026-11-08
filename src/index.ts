@@ -40,10 +40,12 @@ export type { CallOptions, RouteOptions } from "./functions.js";
 export { BucketClient, StorageClient } from "./files.js";
 export type { TransferOptions, UploadBody, UploadOptions } from "./files.js";
 
-export { RealtimeChannel, RealtimeClient } from "./realtime.js";
+export { LiveQuery, RealtimeChannel, RealtimeClient } from "./realtime.js";
 export type {
   ChannelEvents,
   ChannelOptions,
+  LiveQueryOptions,
+  LiveResult,
   PresenceChange,
   RealtimeOptions,
   RealtimeStatus,

@@ -76,6 +76,8 @@ export class RealtimeClient {
   private socket: WebSocketLike | null = null;
   private currentStatus: RealtimeStatus = "idle";
   private readonly channels = new Map<string, RealtimeChannel<any, any>>();
+  private readonly queries = new Map<string, LiveQuery<any>>();
+  private queryIds = 0;
   private readonly pending = new Map<string, Pending>();
   private readonly statusListeners = new Set<Handler<RealtimeStatus>>();
   private refs = 0;
@@ -137,6 +139,33 @@ export class RealtimeClient {
   /** Forget a channel object once it is unsubscribed. */
   forget(name: string): void {
     this.channels.delete(name);
+  }
+
+  // ── live queries ──────────────────────────────────────────────────────
+
+  /**
+   * A live query: the result of `GET /rest/v1/<resource>` with these options, sent again whenever it changes. The same filters, sort,
+   * search and list policy apply, so you only ever get rows you could read. The table needs **Broadcast changes** on.
+   *
+   * ```ts
+   * const open = pawabase.realtime.live<Task>("tasks", { filter: { done: "eq.false" }, sort: "-created_at", limit: 20 });
+   * open.onChange(({ data }) => render(data));
+   * // later: open.stop();
+   * ```
+   * It reopens by itself after a reconnect. `await open.ready()` resolves with the first result.
+   */
+  live<T = Record<string, unknown>>(resource: string, query: LiveQueryOptions = {}, onChange?: Handler<LiveResult<T>>): LiveQuery<T> {
+    const id = `lq${++this.queryIds}`;
+    const live = new LiveQuery<T>(this, id, resource, query);
+    this.queries.set(id, live);
+    if (onChange) live.onChange(onChange);
+    void live.start();
+    return live;
+  }
+
+  /** @internal */
+  dropQuery(id: string): void {
+    this.queries.delete(id);
   }
 
   // ── connection ────────────────────────────────────────────────────────
@@ -343,6 +372,9 @@ export class RealtimeClient {
     for (const channel of [...this.channels.values()]) {
       if (channel.wantsJoin) await channel.rejoin().catch(() => undefined);
     }
+    for (const live of [...this.queries.values()]) {
+      await live.reopen().catch((error: unknown) => live.fail(error instanceof RealtimeError ? error : new RealtimeError("query_failed", String(error))));
+    }
   }
 
   // ── messages ──────────────────────────────────────────────────────────
@@ -394,6 +426,14 @@ export class RealtimeClient {
         this.channels
           .get(String(frame["channel"]))
           ?.applyPresence((frame["joins"] as PresenceMember[]) ?? [], (frame["leaves"] as PresenceMember[]) ?? []);
+        return;
+      }
+      case "query_result": {
+        this.queries.get(String(frame["id"]))?.deliver(frame);
+        return;
+      }
+      case "query_closed": {
+        this.queries.get(String(frame["id"]))?.fail(new RealtimeError("query_closed", String(frame["reason"] ?? "The live query was closed.")));
         return;
       }
       case "pong":
@@ -546,6 +586,139 @@ export class RealtimeClient {
       if (this.currentStatus === "idle" || (this.currentStatus === "closed" && !this.manual)) await this.connect().catch(() => undefined);
       else await sleep(20);
     }
+  }
+}
+
+/** What a live query reads: the same options as listing a resource over REST. */
+export interface LiveQueryOptions {
+  /** `{ status: "eq.paid", total: "gte.1000" }`; a bare value means `eq`. */
+  filter?: Record<string, string | number | boolean>;
+  /** `"-created_at,title"`: a leading `-` sorts descending. */
+  sort?: string;
+  /** `"id,title,done"`: the fields to return. */
+  select?: string;
+  /** Full-text search over the resource's search fields. */
+  q?: string;
+  /** Rows per result, 1–100. Default 20. */
+  limit?: number;
+  offset?: number;
+}
+
+/** One result of a live query. `total` is `null` when a per-row policy makes the count unreliable. */
+export interface LiveResult<T> {
+  data: T[];
+  total: number | null;
+}
+
+/** An open live query. Read `data` at any time; `onChange` hears every new result; `stop()` ends it. */
+export class LiveQuery<T = Record<string, unknown>> {
+  private readonly changeHandlers = new Set<Handler<LiveResult<T>>>();
+  private readonly errorHandlers = new Set<Handler<RealtimeError>>();
+  private current: LiveResult<T> | null = null;
+  private stopped = false;
+  private firstResolve: ((value: LiveResult<T>) => void) | null = null;
+  private firstReject: ((error: unknown) => void) | null = null;
+  private readonly first: Promise<LiveResult<T>>;
+
+  constructor(
+    private readonly client: RealtimeClient,
+    readonly id: string,
+    readonly resource: string,
+    readonly query: LiveQueryOptions,
+  ) {
+    this.first = new Promise((resolve, reject) => {
+      this.firstResolve = resolve;
+      this.firstReject = reject;
+    });
+    this.first.catch(() => undefined); // a caller that never awaits ready() must not see an unhandled rejection
+  }
+
+  /** The latest rows (empty until the first result). */
+  get data(): T[] {
+    return this.current?.data ?? [];
+  }
+
+  get total(): number | null {
+    return this.current?.total ?? null;
+  }
+
+  /** Resolves with the first result, or rejects if the query is refused. */
+  ready(): Promise<LiveResult<T>> {
+    return this.first;
+  }
+
+  onChange(handler: Handler<LiveResult<T>>): () => void {
+    this.changeHandlers.add(handler);
+    if (this.current) handler(this.current);
+    return () => void this.changeHandlers.delete(handler);
+  }
+
+  /** Called when the query is refused or closed by the server (for example, the caller lost access). */
+  onError(handler: Handler<RealtimeError>): () => void {
+    this.errorHandlers.add(handler);
+    return () => void this.errorHandlers.delete(handler);
+  }
+
+  /** @internal */
+  async start(): Promise<void> {
+    try {
+      // Already open: ask now. Not yet: the client asks for every live query as soon as it is welcomed.
+      if (this.client.status === "open") await this.reopen();
+      else await this.client.whenOpen();
+    } catch (error) {
+      this.fail(error instanceof RealtimeError ? error : new RealtimeError("query_failed", String(error)));
+    }
+  }
+
+  /** @internal Ask the server for the query (again, after a reconnect). */
+  async reopen(): Promise<void> {
+    if (this.stopped) return;
+    await this.client.request({ type: "query", id: this.id, resource: this.resource, query: this.query });
+  }
+
+  /** @internal */
+  deliver(frame: Record<string, unknown>): void {
+    if (this.stopped) return;
+    const result: LiveResult<T> = {
+      data: Array.isArray(frame["data"]) ? (frame["data"] as T[]) : [],
+      total: typeof frame["total"] === "number" ? frame["total"] : null,
+    };
+    this.current = result;
+    if (this.firstResolve) {
+      this.firstResolve(result);
+      this.firstResolve = this.firstReject = null;
+    }
+    for (const handler of [...this.changeHandlers]) {
+      try {
+        handler(result);
+      } catch {
+        /* a listener must not stop the others */
+      }
+    }
+  }
+
+  /** @internal */
+  fail(error: RealtimeError): void {
+    if (this.firstReject) {
+      this.firstReject(error);
+      this.firstResolve = this.firstReject = null;
+    }
+    for (const handler of [...this.errorHandlers]) {
+      try {
+        handler(error);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (error.code === "query_closed") this.stop();
+  }
+
+  /** End the live query. */
+  stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.client.dropQuery(this.id);
+    void this.client.request({ type: "unquery", id: this.id }).catch(() => undefined);
   }
 }
 

@@ -67,6 +67,13 @@ async function angula(options: { forbid?: string[]; closeOnConnect?: number[]; p
           return send(ws, { type: "history", ref: frame["ref"], channel: frame["channel"], messages: history.filter((m) => m.channel === frame["channel"]).slice(-frame["limit"]) });
         case "presence":
           return ack();
+        case "query": {
+          if (frame["resource"] === "secret") return send(ws, { type: "ack", ref: frame["ref"], ok: false, error: "forbidden", reason: "policy 'owner' refused" });
+          ack({ id: frame["id"] });
+          return send(ws, { type: "query_result", id: frame["id"], data: [{ id: 1, title: "first" }], total: 1 });
+        }
+        case "unquery":
+          return ack({ id: frame["id"] });
       }
     });
     ws.on("close", () => {
@@ -358,6 +365,58 @@ test("a silent link is recycled by the heartbeat", async () => {
   // Pings go out on schedule and are answered, so the link stays up.
   await until(() => server.received.filter((f) => f["type"] === "ping").length >= 2);
   assert.equal(client.realtime.status, "open");
+  client.dispose();
+  await server.close();
+});
+
+
+test("a live query hands over its first result, then every change, and reopens after a reconnect", async () => {
+  const server = await angula();
+  const client = connect(server.url);
+  const live = client.realtime.live<{ id: number; title: string }>("tasks", { filter: { done: "eq.false" }, sort: "-id", limit: 10 });
+  const seen: string[][] = [];
+  live.onChange(({ data }) => seen.push(data.map((row) => row.title)));
+  const first = await live.ready();
+  assert.deepEqual(first.data, [{ id: 1, title: "first" }]);
+  const opened = server.received.find((f) => f["type"] === "query")!;
+  assert.equal(opened["resource"], "tasks");
+  assert.deepEqual(opened["query"], { filter: { done: "eq.false" }, sort: "-id", limit: 10 });
+
+  server.send({ type: "query_result", id: live.id, data: [{ id: 2, title: "second" }, { id: 1, title: "first" }], total: 2 });
+  await until(() => seen.length === 2);
+  assert.deepEqual(live.data.map((row) => row.title), ["second", "first"]);
+  assert.equal(live.total, 2);
+
+  server.dropAll();
+  await until(() => server.received.filter((f) => f["type"] === "query").length === 2);
+  live.stop();
+  await until(() => server.received.some((f) => f["type"] === "unquery" && f["id"] === live.id));
+  client.dispose();
+  await server.close();
+});
+
+test("a refused live query rejects ready() and tells onError", async () => {
+  const server = await angula();
+  const client = connect(server.url);
+  const live = client.realtime.live("secret");
+  const errors: string[] = [];
+  live.onError((error) => errors.push(error.code));
+  await assert.rejects(live.ready(), (error: unknown) => error instanceof RealtimeError && error.code === "forbidden");
+  assert.deepEqual(errors, ["forbidden"]);
+  client.dispose();
+  await server.close();
+});
+
+test("a live query the server closes stops and reports why", async () => {
+  const server = await angula();
+  const client = connect(server.url);
+  const live = client.realtime.live("tasks");
+  await live.ready();
+  const reasons: string[] = [];
+  live.onError((error) => reasons.push(error.message));
+  server.send({ type: "query_closed", id: live.id, reason: "policy 'owner' refused" });
+  await until(() => reasons.length === 1);
+  assert.deepEqual(reasons, ["policy 'owner' refused"]);
   client.dispose();
   await server.close();
 });
