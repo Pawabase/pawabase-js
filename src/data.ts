@@ -611,7 +611,7 @@ export class ResourceClient<
     return this.http.request<Row>({ method: "PATCH", path: this.path(id), body: patch, signal: options.signal });
   }
 
-  /** Replace the record (`PUT`). */
+  /** Send the record with `PUT`. The server treats it like `update`: fields you leave out are kept, not cleared. */
   replace(id: string | number, row: Insert, options: QueryOptions = {}): Promise<Row> {
     return this.http.request<Row>({ method: "PUT", path: this.path(id), body: row, signal: options.signal });
   }

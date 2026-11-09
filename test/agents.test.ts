@@ -10,7 +10,7 @@ const options = { apiKey: "pb_sk_test", environment: "production", retry: false 
 const BASE = "/platform/v1/envs/production";
 
 test("agents list, run and read a run", async () => {
-  const fake = await serve((r) => ({ status: r.method === "POST" ? 201 : 200, body: r.path.endsWith("/agents") ? { data: [{ name: "support", description: "" }] } : { id: "r1", agent: "support", status: "finished", output: "done" } }));
+  const fake = await serve((r) => ({ status: r.method === "POST" ? 201 : 200, body: r.path.endsWith("/agents") ? { data: [{ name: "support", description: "" }] } : { id: "r1", agent: "support", status: "done", output: "done" } }));
   const client = createClient({ url: fake.url, ...options });
   assert.equal((await client.ai.agents.list())[0]!.name, "support");
   const run = await client.ai.agents.run("support", "hi", { thread: "t1" });
@@ -24,11 +24,11 @@ test("agents list, run and read a run", async () => {
 });
 
 test("an agent stream yields events and stops at [DONE]; an error event throws", async () => {
-  const ok = await serve(() => ({ text: 'data: {"type":"text","text":"Hi"}\n\ndata: {"type":"finished"}\n\ndata: [DONE]\n\n', headers: { "content-type": "text/event-stream" } }));
+  const ok = await serve(() => ({ text: 'data: {"type":"text","text":"Hi"}\n\ndata: {"type":"done"}\n\ndata: [DONE]\n\n', headers: { "content-type": "text/event-stream" } }));
   const client = createClient({ url: ok.url, ...options });
   const types: string[] = [];
   for await (const event of client.ai.agents.stream("support", "hi")) types.push(event.type);
-  assert.deepEqual(types, ["text", "finished"]);
+  assert.deepEqual(types, ["text", "done"]);
   assert.equal((ok.requests[0]!.json as { stream: boolean }).stream, true);
   client.dispose();
 
@@ -42,10 +42,10 @@ test("an agent stream yields events and stops at [DONE]; an error event throws",
 
 test("wait polls until the run is no longer running", async () => {
   let n = 0;
-  const fake = await serve(() => ({ body: { id: "r1", agent: "a", status: ++n < 3 ? "running" : "finished" } }));
+  const fake = await serve(() => ({ body: { id: "r1", agent: "a", status: ++n < 3 ? "running" : "done" } }));
   const client = createClient({ url: fake.url, ...options });
   const run = await client.ai.agents.wait("r1", { intervalMs: 1 });
-  assert.equal(run.status, "finished");
+  assert.equal(run.status, "done");
   assert.equal(fake.requests.length, 3);
   client.dispose();
 });

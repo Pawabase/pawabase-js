@@ -12,17 +12,19 @@
 import { ApiError } from "./errors.js";
 import type { HttpClient } from "./http.js";
 
-export type AgentRunStatus = "running" | "waiting" | "finished" | "failed" | "cancelled" | (string & {});
+export type AgentRunStatus = "running" | "waiting" | "done" | "failed" | (string & {});
 
-/** One run of an agent. A run that stopped to ask permission has `status: "waiting"` and lists what it is waiting on. */
+/** One run of an agent. A run that stopped to ask permission has `status: "waiting"` and lists what it is waiting on in `pending`. */
 export interface AgentRun {
   id: string;
   agent: string;
   status: AgentRunStatus;
   /** The agent's answer, once it has one. */
   output?: string;
-  thread?: string;
+  thread_id?: string;
   error?: string;
+  /** What it is waiting on when `status` is `waiting`. */
+  pending?: Array<{ id: string; name: string; arguments?: unknown; why?: string }>;
   [field: string]: unknown;
 }
 

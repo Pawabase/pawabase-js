@@ -110,7 +110,7 @@ export class InboundHooks extends Definitions {
 
 /** Background work: jobs, failures and replays, queues, workers and how failed work is retried. */
 export class Jobs extends Service {
-  /** `status`: `queued`, `active`, `retrying`, `succeeded`, `failed`. */
+  /** `status`: `queued`, `active`, `retrying`, `completed`, `failed`. */
   list(options: { status?: string; queue?: string; limit?: number } = {}): Promise<Api> {
     return this.get("/jobs", options);
   }
