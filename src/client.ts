@@ -1,5 +1,6 @@
 import { AiClient } from "./ai.js";
 import { AuthClient, type AuthOptions } from "./auth.js";
+import { CaptchaClient } from "./captcha.js";
 import { ResourceClient, type AnyRow, type ResourceTypes } from "./data.js";
 import { ConfigError } from "./errors.js";
 import { StorageClient } from "./files.js";
@@ -81,6 +82,8 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
   readonly routes: RoutesClient;
   /** Channels, presence and publishing. */
   readonly realtime: RealtimeClient;
+  /** Bot protection for your own forms: earn a pass in the browser (`protect`), check it on your server (`verify`). */
+  readonly captcha: CaptchaClient;
 
   constructor(readonly options: ClientOptions) {
     if (!options.url) throw new ConfigError("createClient needs the gateway `url`.");
@@ -127,6 +130,7 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
     });
     config.tokens = stateless ? staticTokens(options.accessToken as NonNullable<ClientOptions["accessToken"]>) : this.auth;
     this.storage = new StorageClient(this.http);
+    this.captcha = new CaptchaClient(this.http, options.auth?.captcha);
     this.ai = new AiClient(this.http);
     this.flows = new FlowsClient(this.http);
     this.routes = new RoutesClient(this.http);

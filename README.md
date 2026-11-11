@@ -74,6 +74,7 @@ for await (const post of live) { /* lazily, page by page */ }
 
 await pawabase.from("posts").where({ status: "live", views: { gte: 10 }, org_id: null });
 await pawabase.from("posts").in("id", [1, 2, 3]).select("id", "title").expand("author");
+await pawabase.from("products").search("red mug").perPage(20);   // full-text, over the table's search fields
 ```
 
 | Method | Server operator |
@@ -118,12 +119,18 @@ and across tabs the Web Locks API serialises it where the browser has it (tab-to
 
 Also: `signInWithMagicLink` / `verifyMagicLink`, `requestPasswordReset` / `resetPassword`, `verifyEmail`,
 `resendVerification`, `confirmEmailChange`, `mfa.*` (enroll, verify, disable, recovery codes), `sessions.*`,
-`orgs.*` (members, invitations, teams), `devices.*`, `apiKeys.*` (keys a user makes for themselves), `machine.token()` and `asMachine({ clientId, clientSecret })` (a service or AI agent signing in with its client id and key), `exchangeCode(code)`, `switchOrg(slug)`, `settings()`.
+`orgs.*` (members, invitations, teams, roles and permissions, email domains, security, activity, `joinable()` / `join()`), `devices.*`, `apiKeys.*` (keys a user makes for themselves), `machine.token()` and `asMachine({ clientId, clientSecret })` (a service or AI agent signing in with its client id and key), `exchangeCode(code)`, `switchOrg(slug)`, `settings()`.
 
 Also: **guest sessions** (`signInAnonymously()`, then `upgradeAnonymous({ email, password })` keeps what the guest made), **emailed codes**
 (`sendEmailCode({ email })`, `verifyEmailCode({ email, code })`), **passkeys** (in a browser `auth.passkeys.register()` and
 `auth.passkeys.signIn()` do the whole WebAuthn ceremony; `list`, `remove`, and the `request…` / `finish…` pairs are there for native apps and tests),
 `issueToken("billing")` for a short-lived token for another service, and `jwks()` for the public keys that verify it.
+
+**Bot protection.** When the environment protects sign-up or sign-in, a request can be refused with `captcha_required`. The built-in
+check is solved for you and the request sent again; a solved check earns a clearance that is remembered. For Turnstile, hCaptcha or
+reCAPTCHA give `auth.captcha.getToken`, which shows the provider's widget and returns its token. For your own forms,
+`pawabase.captcha.protect("contact")` earns a pass in the browser and `pawabase.captcha.verify(pass, { action })` checks it on a server
+with a secret key.
 
 **Social sign-in** needs the `environment` in the options, because the provider URL names it (a publishable key only: a secret key is refused):
 

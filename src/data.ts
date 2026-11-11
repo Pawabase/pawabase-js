@@ -45,6 +45,7 @@ interface State {
   sort: string[];
   select: string[] | null;
   expand: string[];
+  search: string | null;
   page: number;
   perPage: number | null;
   /** False asks for every match in one response. */
@@ -121,6 +122,7 @@ export class QueryBuilder<Row = AnyRow> implements PromiseLike<Page<Row>> {
       sort: [],
       select: null,
       expand: [],
+      search: null,
       page: 1,
       perPage: null,
       paginate: true,
@@ -241,6 +243,11 @@ export class QueryBuilder<Row = AnyRow> implements PromiseLike<Page<Row>> {
     return this.with({ expand: [...this.state.expand, ...relations] });
   }
 
+  /** Full-text search over the fields the resource lists under `operations.list.search.fields`. An empty string clears it. */
+  search(text: string | null): QueryBuilder<Row> {
+    return this.with({ search: text && text.trim() ? text.trim() : null });
+  }
+
   /** The 1-based page. */
   page(page: number): QueryBuilder<Row> {
     return this.with({ page });
@@ -277,6 +284,7 @@ export class QueryBuilder<Row = AnyRow> implements PromiseLike<Page<Row>> {
     if (this.state.sort.length) params["sort"] = this.state.sort.join(",");
     if (this.state.select) params["select"] = this.state.select.join(",");
     if (this.state.expand.length) params["expand"] = [...new Set(this.state.expand)].join(",");
+    if (this.state.search) params["q"] = this.state.search;
     if (!this.state.paginate) params["paginate"] = "false";
     else {
       if (this.state.page !== 1) params["page"] = this.state.page;
@@ -518,6 +526,9 @@ export class ResourceClient<
   }
   expand(...relations: string[]): QueryBuilder<Row> {
     return this.query().expand(...relations);
+  }
+  search(text: string | null): QueryBuilder<Row> {
+    return this.query().search(text);
   }
   page(page: number): QueryBuilder<Row> {
     return this.query().page(page);

@@ -19,6 +19,8 @@ export type {
   UpdateUserInput,
   UrlSessionResult,
 } from "./auth.js";
+export { CaptchaClient, captchaChallengeOf, isCaptchaError, solveChallenge } from "./captcha.js";
+export type { CaptchaAction, CaptchaChallenge, CaptchaOptions, CaptchaPass, CaptchaProvider, CaptchaVerification, PrepareResult } from "./captcha.js";
 export { MemoryStorage } from "./session-store.js";
 export type { SessionStorage } from "./session-store.js";
 

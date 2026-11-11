@@ -542,3 +542,53 @@ test("asMachine signs in once, reuses the token and sends it as the bearer", asy
   agent.dispose();
   client.dispose();
 });
+
+test("organizations: roles, permissions, teams, domains, security, audit, transfer and joining by domain", async () => {
+  const fake = await serve((req) => {
+    if (req.path.endsWith("/roles") || req.path.endsWith("/permissions") || req.path.endsWith("/domains") || req.path.endsWith("/members") || req.path === "/auth/v1/joinable-orgs") return { body: { data: [] } };
+    if (req.path.endsWith("/audit")) return { body: { data: [], next: null } };
+    return { body: { ok: true } };
+  });
+  const client = memoryClient(fake.url);
+  const orgs = client.auth.orgs;
+  await orgs.roles("acme");
+  await orgs.permissions("acme");
+  await orgs.saveRole("acme", "support", { name: "Support", permissions: ["tickets.read"] });
+  await orgs.deleteRole("acme", "support");
+  await orgs.transfer("acme", { userId: "u2", keepRole: "owner" });
+  await orgs.updateTeam("acme", "eng", { role: "admin" });
+  await orgs.teamMembers("acme", "eng");
+  await orgs.deleteTeam("acme", "eng");
+  await orgs.addDomain("acme", { domain: "acme.test", join: "suggest", role: "member" });
+  await orgs.verifyDomain("acme", "acme.test");
+  await orgs.updateDomain("acme", "acme.test", { join: "join" });
+  await orgs.removeDomain("acme", "acme.test");
+  await orgs.setSecurity("acme", { requireMfa: true });
+  await orgs.audit("acme", { limit: 20, before: "01J99" });
+  await orgs.joinable();
+  await orgs.join("acme");
+  assert.deepEqual(
+    fake.requests.map((r) => `${r.method} ${r.url}`),
+    [
+      "GET /auth/v1/orgs/acme/roles",
+      "GET /auth/v1/orgs/acme/permissions",
+      "PUT /auth/v1/orgs/acme/roles/support",
+      "DELETE /auth/v1/orgs/acme/roles/support",
+      "POST /auth/v1/orgs/acme/transfer",
+      "PATCH /auth/v1/orgs/acme/teams/eng",
+      "GET /auth/v1/orgs/acme/teams/eng/members",
+      "DELETE /auth/v1/orgs/acme/teams/eng",
+      "POST /auth/v1/orgs/acme/domains",
+      "POST /auth/v1/orgs/acme/domains/acme.test/verify",
+      "PATCH /auth/v1/orgs/acme/domains/acme.test",
+      "DELETE /auth/v1/orgs/acme/domains/acme.test",
+      "PATCH /auth/v1/orgs/acme/security",
+      "GET /auth/v1/orgs/acme/audit?limit=20&before=01J99",
+      "GET /auth/v1/joinable-orgs",
+      "POST /auth/v1/joinable-orgs/acme/join",
+    ],
+  );
+  assert.deepEqual(fake.requests[4]!.json, { user_id: "u2", keep_role: "owner" });
+  assert.deepEqual(fake.requests[12]!.json, { require_mfa: true });
+  client.dispose();
+});

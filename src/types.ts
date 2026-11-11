@@ -55,6 +55,15 @@ export interface AuthSettings {
   mfa_enabled: boolean;
   providers: string[];
   password_policy: { kind: string; min_length: number };
+  /** Bot protection: whether it is on, the provider and its public key, and how each action is protected. */
+  captcha?: {
+    enabled: boolean;
+    provider: "pawabase" | "turnstile" | "hcaptcha" | "recaptcha" | null;
+    site_key: string | null;
+    mode: "off" | "adaptive" | "always";
+    recaptcha_version?: "v2" | "v3";
+    actions: Record<string, "off" | "adaptive" | "always">;
+  };
 }
 
 export interface MfaStatus {
@@ -97,9 +106,68 @@ export interface Organization {
   slug: string;
   name: string;
   metadata: Record<string, unknown>;
+  /** Data only the application can change. */
+  app_metadata?: Record<string, unknown>;
   /** The caller's role in it. */
   role: string | null;
+  /** What the caller's role allows here, e.g. `org:members.invite`, `invoices.read`. */
+  permissions?: string[];
+  /** The teams the caller is in. */
+  my_teams?: string[];
+  require_mfa?: boolean;
+  max_members?: number | null;
+  suspended?: boolean;
   created_at: string | null;
+}
+
+/** A role members of an organization can have. */
+export interface OrgRoleInfo {
+  key: string;
+  name: string;
+  description?: string;
+  permissions: string[];
+  /** `built-in`, `environment` (every organization has it) or `organization` (this one made it). */
+  source?: string;
+  /** How many members have it. */
+  members?: number;
+  [field: string]: unknown;
+}
+
+export interface OrgPermission {
+  key: string;
+  description: string;
+  /** Pawabase's own `org:*` permissions, as opposed to the application's. */
+  system: boolean;
+}
+
+export interface OrgDomain {
+  id: number;
+  domain: string;
+  verified: boolean;
+  verified_at: string | null;
+  /** How people with an address at the domain may join: see `addDomain`. */
+  join: string;
+  /** The role they join with. */
+  role: string;
+  /** The DNS TXT record to publish to prove the domain is yours; `null` once verified. */
+  dns_record: { type: string; name: string; value: string } | null;
+}
+
+export interface OrgAuditEntry {
+  id: string;
+  action: string;
+  actor: string | null;
+  actor_email: string | null;
+  target: string | null;
+  data: Record<string, unknown>;
+  created_at: string | null;
+}
+
+export interface JoinableOrg {
+  slug: string;
+  name: string;
+  domain: string;
+  role: string;
 }
 
 export type OrgRole = "viewer" | "member" | "admin" | "owner";
@@ -109,6 +177,9 @@ export interface OrgMember {
   email: string;
   name: string;
   role: string;
+  avatar_url?: string | null;
+  teams?: string[];
+  joined_at?: string | null;
 }
 
 export interface Invitation {

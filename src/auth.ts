@@ -1,3 +1,4 @@
+import { CaptchaGate, type CaptchaAction, type CaptchaChallenge, type CaptchaOptions } from "./captcha.js";
 import { ApiError, AuthenticationError, ConfigError, PawabaseError } from "./errors.js";
 import type { HttpClient, TokenProvider } from "./http.js";
 import { MemoryStorage, browserStorage, type SessionStorage } from "./session-store.js";
@@ -7,7 +8,12 @@ import type {
   Invitation,
   MfaEnrollment,
   MfaStatus,
+  JoinableOrg,
+  OrgAuditEntry,
+  OrgDomain,
   OrgMember,
+  OrgPermission,
+  OrgRoleInfo,
   OrgRole,
   Organization,
   Session,
@@ -43,6 +49,11 @@ export interface AuthOptions {
   refreshMarginSeconds?: number;
   /** Read tokens a social sign-in left in the URL fragment. Default `true` in browsers. */
   detectSessionInUrl?: boolean;
+  /**
+   * Bot protection. The built-in check is solved for you; for Turnstile, hCaptcha or reCAPTCHA give `getToken`, which shows the
+   * provider's widget and returns its token.
+   */
+  captcha?: CaptchaOptions;
 }
 
 export type SignInResult =
@@ -141,6 +152,7 @@ export class AuthClient implements TokenProvider {
   private readonly ready: Promise<void>;
   private disposers: Array<() => void> = [];
   private disposed = false;
+  private readonly gate: CaptchaGate;
 
   readonly mfa: AuthMfa;
   readonly sessions: AuthSessions;
@@ -164,6 +176,7 @@ export class AuthClient implements TokenProvider {
     this.storageKey = options.storageKey ?? storageKeyFor(http.config.baseUrl, http.config.apiKey);
     this.autoRefresh = options.autoRefreshToken ?? true;
     this.margin = options.refreshMarginSeconds ?? 60;
+    this.gate = new CaptchaGate(http, this.storage, `${this.storageKey}:captcha`, options.captcha);
     this.mfa = new AuthMfa(http, () => this.refreshSession());
     this.sessions = new AuthSessions(http);
     this.orgs = new AuthOrgs(http);
@@ -460,8 +473,10 @@ export class AuthClient implements TokenProvider {
     data?: Record<string, unknown>;
     /** Where the confirmation link sends the user. Must be an allowed redirect URL. */
     redirectTo?: string;
+    /** A solved security check, if you run the widget yourself. Usually left out: see `auth.captcha`. */
+    captchaToken?: string;
   }): Promise<SignUpResult> {
-    const wire = await this.http.request<
+    const wire = await this.gate.request<
       WireSession & { verification_required?: boolean; session?: null; user: User }
     >({
       method: "POST",
@@ -475,7 +490,7 @@ export class AuthClient implements TokenProvider {
         ...(input.redirectTo ? { redirect_to: input.redirectTo } : {}),
       },
       auth: "none",
-    });
+    }, input.captchaToken);
     if (wire.verification_required || !wire.access_token) {
       return { user: wire.user, session: null, verificationRequired: true };
     }
@@ -488,8 +503,8 @@ export class AuthClient implements TokenProvider {
    * Sign in with email and password. When the account has MFA the result is
    * `{ status: "mfa_required" }`; call its `verify(code)` to finish.
    */
-  async signInWithPassword(input: { email: string; password: string; org?: string }): Promise<SignInResult> {
-    const wire = await this.http.request<
+  async signInWithPassword(input: { email: string; password: string; org?: string; captchaToken?: string }): Promise<SignInResult> {
+    const wire = await this.gate.request<
       (WireSession & { mfa_required?: undefined }) | { mfa_required: true; mfa_token: string; factors: string[] }
     >({
       method: "POST",
@@ -501,7 +516,7 @@ export class AuthClient implements TokenProvider {
         ...(input.org ? { org: input.org } : {}),
       },
       auth: "none",
-    });
+    }, input.captchaToken);
     if ("mfa_required" in wire && wire.mfa_required) {
       return this.challenge(wire.mfa_token, wire.factors, input.org);
     }
@@ -537,9 +552,17 @@ export class AuthClient implements TokenProvider {
     return session;
   }
 
+  /**
+   * Ask whether an action needs a security check right now, and get the check: for showing a provider's widget before the person
+   * submits, instead of after a refusal. `email` makes the answer reflect attempts on that account.
+   */
+  captchaChallenge(action: CaptchaAction, email?: string): Promise<{ required: boolean; mode: string; captcha: CaptchaChallenge | null }> {
+    return this.gate.challenge(action, email);
+  }
+
   /** Email a one-time sign-in link. Always resolves the same way, so it does not reveal whether an account exists. */
-  async signInWithMagicLink(input: { email: string; redirectTo?: string; createUser?: boolean }): Promise<void> {
-    await this.http.request({
+  async signInWithMagicLink(input: { email: string; redirectTo?: string; createUser?: boolean; captchaToken?: string }): Promise<void> {
+    await this.gate.request({
       method: "POST",
       path: "/auth/v1/magic-link",
       body: {
@@ -548,7 +571,7 @@ export class AuthClient implements TokenProvider {
         ...(input.createUser !== undefined ? { create_user: input.createUser } : {}),
       },
       auth: "none",
-    });
+    }, input.captchaToken);
   }
 
   /** Exchange the token from a magic-link email for a session. */
@@ -574,8 +597,8 @@ export class AuthClient implements TokenProvider {
    * Start a guest session: an account with no email or password, for someone who has not signed up yet. Turn it into a real account with
    * {@link upgradeAnonymous}, keeping everything the guest created. The environment must allow guest sign-in.
    */
-  async signInAnonymously(): Promise<Session> {
-    const wire = await this.http.request<WireSession>({ method: "POST", path: "/auth/v1/anonymous", body: {}, auth: "none" });
+  async signInAnonymously(input: { captchaToken?: string } = {}): Promise<Session> {
+    const wire = await this.gate.request<WireSession>({ method: "POST", path: "/auth/v1/anonymous", body: {}, auth: "none" }, input.captchaToken);
     return this.adopt(wire);
   }
 
@@ -601,8 +624,8 @@ export class AuthClient implements TokenProvider {
   }
 
   /** Email a short sign-in code. The answer is the same whether or not the address has an account. */
-  async sendEmailCode(input: { email: string; createUser?: boolean }): Promise<void> {
-    await this.http.request({ method: "POST", path: "/auth/v1/email-code", body: { email: input.email, create_user: input.createUser ?? true }, auth: "none" });
+  async sendEmailCode(input: { email: string; createUser?: boolean; captchaToken?: string }): Promise<void> {
+    await this.gate.request({ method: "POST", path: "/auth/v1/email-code", body: { email: input.email, create_user: input.createUser ?? true }, auth: "none" }, input.captchaToken);
   }
 
   /** Sign in with the code from {@link sendEmailCode}. An account with a second factor answers `mfa_required`. */
@@ -778,13 +801,13 @@ export class AuthClient implements TokenProvider {
   }
 
   /** Send the confirmation email again. Always resolves the same way. */
-  async resendVerification(input: { email: string; redirectTo?: string }): Promise<void> {
-    await this.http.request({
+  async resendVerification(input: { email: string; redirectTo?: string; captchaToken?: string }): Promise<void> {
+    await this.gate.request({
       method: "POST",
       path: "/auth/v1/verify/request",
       body: { email: input.email, ...(input.redirectTo ? { redirect_to: input.redirectTo } : {}) },
       auth: "none",
-    });
+    }, input.captchaToken);
   }
 
   /** Confirm an address with the token from the email. Signs the user in. */
@@ -807,13 +830,13 @@ export class AuthClient implements TokenProvider {
   }
 
   /** Email a password reset link. Always resolves the same way. */
-  async requestPasswordReset(input: { email: string; redirectTo?: string }): Promise<void> {
-    await this.http.request({
+  async requestPasswordReset(input: { email: string; redirectTo?: string; captchaToken?: string }): Promise<void> {
+    await this.gate.request({
       method: "POST",
       path: "/auth/v1/recover",
       body: { email: input.email, ...(input.redirectTo ? { redirect_to: input.redirectTo } : {}) },
       auth: "none",
-    });
+    }, input.captchaToken);
   }
 
   /** Set a new password with the token from the reset email. Every other session is ended and this one is signed in. */
@@ -1230,8 +1253,79 @@ class AuthOrgs {
   async teams(slug: string): Promise<Team[]> {
     return (await this.http.request<{ data: Team[] }>({ path: `${this.base(slug)}/teams` })).data;
   }
-  createTeam(slug: string, input: { slug: string; name: string }): Promise<Team> {
+  createTeam(slug: string, input: { slug: string; name: string; description?: string; role?: string | null }): Promise<Team> {
     return this.http.request({ method: "POST", path: `${this.base(slug)}/teams`, body: input });
+  }
+  /** Rename a team, or change the role it gives its members (`null` gives none). */
+  updateTeam(slug: string, team: string, input: { name?: string; description?: string; role?: string | null }): Promise<Team> {
+    return this.http.request({ method: "PATCH", path: `${this.base(slug)}/teams/${encodeURIComponent(team)}`, body: input });
+  }
+  async deleteTeam(slug: string, team: string): Promise<void> {
+    await this.http.request({ method: "DELETE", path: `${this.base(slug)}/teams/${encodeURIComponent(team)}` });
+  }
+  async teamMembers(slug: string, team: string): Promise<OrgMember[]> {
+    return (await this.http.request<{ data: OrgMember[] }>({ path: `${this.base(slug)}/teams/${encodeURIComponent(team)}/members` })).data;
+  }
+
+  // ── roles and permissions ────────────────────────────────────────────
+
+  /** The roles members can have here: built in, the environment's, and the organization's own. */
+  async roles(slug: string): Promise<OrgRoleInfo[]> {
+    return (await this.http.request<{ data: OrgRoleInfo[] }>({ path: `${this.base(slug)}/roles` })).data;
+  }
+  /** The permissions a role here can grant. */
+  async permissions(slug: string): Promise<OrgPermission[]> {
+    return (await this.http.request<{ data: OrgPermission[] }>({ path: `${this.base(slug)}/permissions` })).data;
+  }
+  /** Create or change one of this organization's own roles. Needs `org:roles.manage`; it cannot grant more than you have. */
+  saveRole(slug: string, key: string, input: { name: string; description?: string; permissions: string[] }): Promise<OrgRoleInfo> {
+    return this.http.request({ method: "PUT", path: `${this.base(slug)}/roles/${encodeURIComponent(key)}`, body: input });
+  }
+  async deleteRole(slug: string, key: string): Promise<void> {
+    await this.http.request({ method: "DELETE", path: `${this.base(slug)}/roles/${encodeURIComponent(key)}` });
+  }
+
+  /** Make another member an owner. You keep `keepRole` (default `admin`; `owner` keeps you an owner too). */
+  transfer(slug: string, input: { userId: string; keepRole?: string }): Promise<{ owner: string; your_role: string }> {
+    return this.http.request({ method: "POST", path: `${this.base(slug)}/transfer`, body: { user_id: input.userId, ...(input.keepRole ? { keep_role: input.keepRole } : {}) } });
+  }
+
+  // ── domains, security, activity ──────────────────────────────────────
+
+  async domains(slug: string): Promise<OrgDomain[]> {
+    return (await this.http.request<{ data: OrgDomain[] }>({ path: `${this.base(slug)}/domains` })).data;
+  }
+  /**
+   * Claim an email domain. Publish the answer's `dns_record`, then call `verifyDomain`. Once verified, `join` decides what people with an
+   * address there may do: `off` nothing, `suggest` see the organization under `joinable()` and join, `join` become members on their own.
+   */
+  addDomain(slug: string, input: { domain: string; join?: "off" | "suggest" | "join"; role?: string }): Promise<OrgDomain> {
+    return this.http.request({ method: "POST", path: `${this.base(slug)}/domains`, body: input });
+  }
+  verifyDomain(slug: string, domain: string): Promise<OrgDomain> {
+    return this.http.request({ method: "POST", path: `${this.base(slug)}/domains/${encodeURIComponent(domain)}/verify` });
+  }
+  updateDomain(slug: string, domain: string, input: { join?: "off" | "suggest" | "join"; role?: string }): Promise<OrgDomain> {
+    return this.http.request({ method: "PATCH", path: `${this.base(slug)}/domains/${encodeURIComponent(domain)}`, body: input });
+  }
+  async removeDomain(slug: string, domain: string): Promise<void> {
+    await this.http.request({ method: "DELETE", path: `${this.base(slug)}/domains/${encodeURIComponent(domain)}` });
+  }
+  /** Require members to use a second factor while working in this organization. */
+  setSecurity(slug: string, input: { requireMfa: boolean }): Promise<{ require_mfa: boolean }> {
+    return this.http.request({ method: "PATCH", path: `${this.base(slug)}/security`, body: { require_mfa: input.requireMfa } });
+  }
+  /** What has changed in the organization, newest first. Pass the last page's `next` as `before` for older entries. */
+  audit(slug: string, options: { limit?: number; before?: string } = {}): Promise<{ data: OrgAuditEntry[]; next: string | null }> {
+    return this.http.request({ path: `${this.base(slug)}/audit`, query: { limit: options.limit, before: options.before } });
+  }
+
+  /** Organizations the signed-in person may join because of their email address's domain. */
+  async joinable(): Promise<JoinableOrg[]> {
+    return (await this.http.request<{ data: JoinableOrg[] }>({ path: "/auth/v1/joinable-orgs" })).data;
+  }
+  join(slug: string): Promise<Organization> {
+    return this.http.request({ method: "POST", path: `/auth/v1/joinable-orgs/${encodeURIComponent(slug)}/join` });
   }
   async addTeamMember(slug: string, team: string, userId: string): Promise<void> {
     await this.http.request({
