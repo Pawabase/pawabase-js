@@ -1,5 +1,5 @@
 import { CaptchaGate, type CaptchaAction, type CaptchaChallenge, type CaptchaOptions } from "./captcha.js";
-import { ApiError, AuthenticationError, ConfigError, PawabaseError } from "./errors.js";
+import { ApiError, AuthenticationError, ConfigError, NotFoundError, PawabaseError } from "./errors.js";
 import type { HttpClient, TokenProvider } from "./http.js";
 import { MemoryStorage, browserStorage, type SessionStorage } from "./session-store.js";
 import type {
@@ -686,6 +686,38 @@ export class AuthClient implements TokenProvider {
     return session;
   }
 
+  /**
+   * The company login (enterprise SSO connection) that serves an email address or an organization, or `null` when there is none.
+   * Ask it from the email field of your sign-in form: when it answers, send the person to their company instead of asking for a
+   * password. `required: true` means no other way in is accepted for that address.
+   */
+  async findSSO(target: { email?: string; organization?: string }): Promise<SsoConnectionInfo | null> {
+    try {
+      return await this.http.request<SsoConnectionInfo>({
+        method: "POST",
+        path: "/auth/v1/sso/lookup",
+        body: { ...(target.email ? { email: target.email } : {}), ...(target.organization ? { organization: target.organization } : {}) },
+      });
+    } catch (error) {
+      if (error instanceof NotFoundError) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * Send the browser to the company login for an email address or an organization. Resolves `false` (and stays on the page) when
+   * there is none, so the form can ask for a password instead. The session is picked up on return, as for {@link signInWithOAuth}.
+   */
+  async signInWithSSO(target: { email?: string; organization?: string; redirectTo?: string }): Promise<boolean> {
+    if (typeof window === "undefined") {
+      throw new ConfigError("signInWithSSO redirects a browser. On a server, use findSSO() and signInWithOAuthUrl(connection).");
+    }
+    const found = await this.findSSO(target);
+    if (!found) return false;
+    window.location.assign(this.signInWithOAuthUrl(found.connection, target.redirectTo ? { redirectTo: target.redirectTo } : {}));
+    return true;
+  }
+
   /** Redirect the browser to a provider. After the round trip, {@link getSessionFromUrl} (run automatically) picks the session up. */
   signInWithOAuth(provider: string, options: { redirectTo?: string } = {}): void {
     if (typeof window === "undefined") {
@@ -955,6 +987,18 @@ class AuthMfa {
   regenerateRecoveryCodes(code: string): Promise<{ recovery_codes: string[] }> {
     return this.http.request({ method: "POST", path: "/auth/v1/mfa/recovery-codes", body: { code } });
   }
+}
+
+/** The company login that serves an address, from {@link AuthClient.findSSO}. */
+export interface SsoConnectionInfo {
+  /** The connection's name: pass it to `signInWithOAuthUrl` to build the sign-in address yourself. */
+  connection: string;
+  type: "oidc" | "saml";
+  organization: { slug: string; name: string };
+  /** When `true`, people at this address cannot sign in any other way. */
+  required: boolean;
+  /** Where to send the browser (no key needed). Add `redirect_to` to come back to your app. */
+  url: string;
 }
 
 export interface IssuedToken {

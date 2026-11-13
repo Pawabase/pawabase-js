@@ -16,6 +16,7 @@ export type {
   PasskeyChallenge,
   SignInResult,
   SignUpResult,
+  SsoConnectionInfo,
   UpdateUserInput,
   UrlSessionResult,
 } from "./auth.js";

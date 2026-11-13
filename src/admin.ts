@@ -12,6 +12,7 @@
  * await a.users.create({ email: "ada@example.com", password: "…", roles: ["editor"] });
  * await a.users.update(userId, { disabled: true });
  * await a.orgs.addMember("acme", { email: "ada@example.com", role: "admin" });
+ * await a.ssoConnections.create({ name: "acme-okta", type: "oidc", organization: "acme", settings: { issuer, client_id, client_secret } });
  * ```
  */
 import type { PawabaseClient } from "./client.js";
@@ -239,6 +240,69 @@ export class Orgs extends AdminService {
   }
 }
 
+/** What a company login is set to. Provider details are `issuer`, `client_id`, `client_secret` (OIDC) or `idp_entity_id`, `idp_sso_url`, `idp_cert` (SAML). */
+export interface SsoConnectionSettings {
+  settings?: Body;
+  /** Sign people in through it. Needs the provider details. */
+  enabled?: boolean;
+  /** Treat the addresses the provider sends as confirmed. Default `true`. */
+  trustEmail?: boolean;
+  /** The role newcomers get. Default `member`; never `owner`. */
+  defaultRole?: string;
+  /** The claim (OIDC) or attribute (SAML) that lists a person's groups. */
+  groupsAttribute?: string;
+  /** Group → role, applied at every sign-in. */
+  roleMapping?: Record<string, string>;
+  /** Refuse every other way in for people at the organization's verified domains. */
+  required?: boolean;
+}
+
+/**
+ * Company logins (enterprise SSO): each belongs to one organization and signs in the people at the email domains it verified,
+ * making them members as they arrive.
+ */
+export class SsoConnections extends AdminService {
+  list(): Promise<Api> {
+    return this.get("/sso-connections");
+  }
+
+  getConnection(name: string): Promise<Api> {
+    return this.get(seg("sso-connections", name));
+  }
+
+  /** Give an organization its company login. One per organization; the name is part of its addresses and cannot change. */
+  create(connection: { name: string; type: "oidc" | "saml"; organization: string } & SsoConnectionSettings): Promise<Api> {
+    return this.post("/sso-connections", { name: connection.name, type: connection.type, organization: connection.organization, ...wireSso(connection) });
+  }
+
+  /** Change a connection. `settings` are merged into what is stored; send an empty string to clear one. */
+  update(name: string, changes: SsoConnectionSettings): Promise<Api> {
+    return this.patch(seg("sso-connections", name), wireSso(changes));
+  }
+
+  /** Check the provider can be reached (OIDC discovery) or its certificate read (SAML). */
+  test(name: string): Promise<Api> {
+    return this.post(seg("sso-connections", name, "test"), {});
+  }
+
+  remove(name: string): Promise<Api> {
+    return this.del(seg("sso-connections", name));
+  }
+}
+
+function wireSso(changes: SsoConnectionSettings): Body {
+  const pairs: [string, unknown][] = [
+    ["settings", changes.settings],
+    ["enabled", changes.enabled],
+    ["trust_email", changes.trustEmail],
+    ["default_role", changes.defaultRole],
+    ["groups_attribute", changes.groupsAttribute],
+    ["role_mapping", changes.roleMapping],
+    ["required", changes.required],
+  ];
+  return Object.fromEntries(pairs.filter(([, value]) => value !== undefined));
+}
+
 export class Invitations extends AdminService {
   /** Pending and past invitations across organizations. */
   list(): Promise<Api> {
@@ -391,6 +455,7 @@ export class Admin {
   readonly users: Users;
   readonly roles: Roles;
   readonly orgs: Orgs;
+  readonly ssoConnections: SsoConnections;
   readonly invitations: Invitations;
   readonly sessions: Sessions;
   readonly apiKeys: ApiKeys;
@@ -406,6 +471,7 @@ export class Admin {
     this.users = new Users(http, environment);
     this.roles = new Roles(http, environment);
     this.orgs = new Orgs(http, environment);
+    this.ssoConnections = new SsoConnections(http, environment);
     this.invitations = new Invitations(http, environment);
     this.sessions = new Sessions(http, environment);
     this.apiKeys = new ApiKeys(http, environment);
