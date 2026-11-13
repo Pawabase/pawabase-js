@@ -427,11 +427,28 @@ export class ResourceClient<
     metric?: "cosine" | "l2" | "ip";
     limit?: number;
     maxDistance?: number;
+    /** Narrow the candidates as a list read would: `{ status: "live", price: { lte: 50 } }`. One condition per field. */
+    where?: { [K in keyof Row & string]?: Condition };
     signal?: AbortSignal | null;
   }): Promise<{ data: Array<Row & { distance: number }>; metric: string; count: number }> {
+    const query: Record<string, string> = {};
+    if (input.where) {
+      for (const [column, condition] of Object.entries(input.where)) {
+        if (condition === undefined) continue;
+        const [op, value] =
+          typeof condition === "object" && condition !== null && !(condition instanceof Date)
+            ? (Object.entries(condition)[0] as [FilterOp, unknown])
+            : (["eq", condition] as [FilterOp, unknown]);
+        const encoded = encode(column, op, value);
+        if ("empty" in encoded) return { data: [], metric: input.metric ?? "cosine", count: 0 };
+        if ("skip" in encoded) continue;
+        query[`filter[${column}]`] = `${encoded.op}.${encoded.value}`;
+      }
+    }
     return this.http.request({
       method: "POST",
       path: `${this.path()}/similar`,
+      ...(Object.keys(query).length ? { query } : {}),
       body: {
         ...(input.text !== undefined ? { text: input.text } : {}),
         ...(input.vector !== undefined ? { vector: input.vector } : {}),
@@ -617,7 +634,7 @@ export class ResourceClient<
     return result;
   }
 
-  /** Change the listed fields. (A `PATCH` accepts `null` for any field, even a required one.) */
+  /** Change the listed fields. `null` clears an optional field; `null` for a required field is refused with `422`. */
   update(id: string | number, patch: Update, options: QueryOptions = {}): Promise<Row> {
     return this.http.request<Row>({ method: "PATCH", path: this.path(id), body: patch, signal: options.signal });
   }

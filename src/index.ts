@@ -40,7 +40,7 @@ export { FlowsClient, RoutesClient } from "./functions.js";
 export type { CallOptions, RouteOptions } from "./functions.js";
 
 export { BucketClient, StorageClient } from "./files.js";
-export type { TransferOptions, UploadBody, UploadOptions } from "./files.js";
+export type { ImageTransform, ShareLinkOptions, TransferOptions, UploadBody, UploadOptions } from "./files.js";
 
 export { LiveQuery, RealtimeChannel, RealtimeClient } from "./realtime.js";
 export type {

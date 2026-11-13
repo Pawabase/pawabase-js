@@ -20,6 +20,28 @@ export interface UploadOptions {
   timeoutMs?: number;
 }
 
+/** Options for an image's address: Pawabase resizes and re-encodes on request, never changing the original. */
+export interface ImageTransform {
+  width?: number;
+  height?: number;
+  /** `contain` fits inside and never enlarges, `cover` fills and crops, `fill` stretches. */
+  fit?: "contain" | "cover" | "fill";
+  /** `auto` picks AVIF or WebP when the browser accepts it. */
+  format?: "webp" | "avif" | "jpeg" | "png" | "auto";
+  /** 1 to 100. */
+  quality?: number;
+  /** Degrees clockwise. */
+  rotate?: number;
+}
+
+export interface ShareLinkOptions {
+  /** Seconds the link works: 60 to 31536000 (a year). Default `3600`. */
+  expiresIn?: number;
+  /** `view` opens in the browser, `download` always saves the file, `both` (default) allows either. */
+  permissions?: "view" | "download" | "both";
+  label?: string;
+}
+
 export interface TransferOptions {
   signal?: AbortSignal | null | undefined;
   timeoutMs?: number;
@@ -141,7 +163,8 @@ export class BucketClient {
 
   /**
    * A URL for an object in a **public** bucket, usable in `<img src>`. The publishable key
-   * travels in the URL (it is meant to be public); a secret key is refused.
+   * travels in the URL (it is meant to be public); a secret key is refused. {@link fileUrl} gives the
+   * shorter, keyless gateway address and image transforms.
    */
   getPublicUrl(key: string): string {
     const apiKey = this.http.config.apiKey;
@@ -149,6 +172,55 @@ export class BucketClient {
       throw new ConfigError("Refusing to put a secret key in a URL. Use a publishable key, or createSignedUrl().");
     }
     return `${this.http.url(this.object(key))}?apikey=${encodeURIComponent(apiKey)}`;
+  }
+
+  /**
+   * The object's stable address on the gateway, `…/storage/v1/files/<environment>/<bucket>/<key>`, with no key in it. Anyone can
+   * open it when the bucket is public; otherwise the bucket's read rule decides. Pass `transform` for a resized image. Needs
+   * `environment` in the client options.
+   */
+  fileUrl(key: string, transform: ImageTransform = {}): string {
+    const environment = this.http.config.headers["x-environment"];
+    if (!environment) {
+      throw new ConfigError("fileUrl needs the environment: pass `environment` to createClient().");
+    }
+    const query: Record<string, string | number> = {};
+    for (const [name, value] of Object.entries(transform)) if (value !== undefined && value !== null) query[name] = value as string | number;
+    return this.http.url(
+      `/storage/v1/files/${encodeURIComponent(environment)}/${encodeURIComponent(this.name)}/${encodePath(cleanKey(key))}`,
+      query,
+    );
+  }
+
+  /**
+   * A link to one object for people with no account, which you can revoke and which counts how often it is opened. Needs a **secret**
+   * key, so make share links on a server. The answer holds the link's `id` and `url`.
+   */
+  createShareLink(key: string, options: ShareLinkOptions = {}): Promise<Record<string, unknown>> {
+    return this.http.request({
+      method: "POST",
+      path: this.platform("shares"),
+      body: { key: cleanKey(key), expires_in: options.expiresIn ?? 3600, permissions: options.permissions ?? "both", label: options.label ?? "" },
+    });
+  }
+
+  /** Every share link on the bucket (a secret key). */
+  listShareLinks(): Promise<Record<string, unknown>> {
+    return this.http.request({ path: this.platform("shares") });
+  }
+
+  /** End a share link at once (a secret key). */
+  async revokeShareLink(shareId: string): Promise<void> {
+    await this.http.request({ method: "DELETE", path: this.platform(`shares/${encodeURIComponent(shareId)}`) });
+  }
+
+  private platform(suffix: string): string {
+    if (!isSecretKey(this.http.config.apiKey)) {
+      throw new ConfigError("Share links are made with a secret key. Create them on your server.");
+    }
+    const environment = this.http.config.headers["x-environment"];
+    if (!environment) throw new ConfigError("Share links need the environment: pass `environment` to createClient().");
+    return `/platform/v1/envs/${encodeURIComponent(environment)}/buckets/${encodeURIComponent(this.name)}/${suffix}`;
   }
 
   /** A temporary URL that lets anyone with it read the object, with no key. Needs read access yourself. */

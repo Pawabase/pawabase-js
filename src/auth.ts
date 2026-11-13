@@ -473,6 +473,8 @@ export class AuthClient implements TokenProvider {
     data?: Record<string, unknown>;
     /** Where the confirmation link sends the user. Must be an allowed redirect URL. */
     redirectTo?: string;
+    /** Send `true` when your sign-up form requires accepting the terms. */
+    acceptedTerms?: boolean;
     /** A solved security check, if you run the widget yourself. Usually left out: see `auth.captcha`. */
     captchaToken?: string;
   }): Promise<SignUpResult> {
@@ -488,6 +490,7 @@ export class AuthClient implements TokenProvider {
         ...(input.name ? { name: input.name } : {}),
         ...(input.data ? { data: input.data } : {}),
         ...(input.redirectTo ? { redirect_to: input.redirectTo } : {}),
+        ...(input.acceptedTerms !== undefined ? { accepted_terms: input.acceptedTerms } : {}),
       },
       auth: "none",
     }, input.captchaToken);
@@ -503,7 +506,14 @@ export class AuthClient implements TokenProvider {
    * Sign in with email and password. When the account has MFA the result is
    * `{ status: "mfa_required" }`; call its `verify(code)` to finish.
    */
-  async signInWithPassword(input: { email: string; password: string; org?: string; captchaToken?: string }): Promise<SignInResult> {
+  async signInWithPassword(input: {
+    email: string;
+    password: string;
+    org?: string;
+    /** Remember this device, so its next sign-in can skip the second step where the environment allows it. */
+    rememberDevice?: boolean;
+    captchaToken?: string;
+  }): Promise<SignInResult> {
     const wire = await this.gate.request<
       (WireSession & { mfa_required?: undefined }) | { mfa_required: true; mfa_token: string; factors: string[] }
     >({
@@ -514,28 +524,29 @@ export class AuthClient implements TokenProvider {
         email: input.email,
         password: input.password,
         ...(input.org ? { org: input.org } : {}),
+        ...(input.rememberDevice ? { remember_device: true } : {}),
       },
       auth: "none",
     }, input.captchaToken);
     if ("mfa_required" in wire && wire.mfa_required) {
-      return this.challenge(wire.mfa_token, wire.factors, input.org);
+      return this.challenge(wire.mfa_token, wire.factors, input.org, input.rememberDevice);
     }
     const session = toSession(wire as WireSession, undefined);
     await this.store(session, "SIGNED_IN");
     return { status: "signed_in", session };
   }
 
-  private challenge(mfaToken: string, factors: string[], org?: string): SignInResult {
+  private challenge(mfaToken: string, factors: string[], org?: string, rememberDevice?: boolean): SignInResult {
     return {
       status: "mfa_required",
       mfaToken,
       factors,
-      verify: (code) => this.verifyMfa({ mfaToken, code, ...(org ? { org } : {}) }),
+      verify: (code) => this.verifyMfa({ mfaToken, code, ...(org ? { org } : {}), ...(rememberDevice ? { rememberDevice } : {}) }),
     };
   }
 
   /** Finish an MFA sign-in with an authenticator code or a recovery code. */
-  async verifyMfa(input: { mfaToken: string; code: string; org?: string }): Promise<Session> {
+  async verifyMfa(input: { mfaToken: string; code: string; org?: string; rememberDevice?: boolean }): Promise<Session> {
     const wire = await this.http.request<WireSession>({
       method: "POST",
       path: "/auth/v1/token",
@@ -544,6 +555,7 @@ export class AuthClient implements TokenProvider {
         mfa_token: input.mfaToken,
         code: input.code,
         ...(input.org ? { org: input.org } : {}),
+        ...(input.rememberDevice ? { remember_device: true } : {}),
       },
       auth: "none",
     });

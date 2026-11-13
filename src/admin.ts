@@ -197,8 +197,23 @@ export class Orgs extends AdminService {
     return this.post("/orgs", { slug, name, owner_email: options.ownerEmail, metadata: options.metadata ?? {} });
   }
 
-  update(slug: string, changes: { name?: string; metadata?: Body }): Promise<Api> {
-    return this.patch(seg("orgs", slug), changes);
+  /**
+   * Change an organization. `metadata` and `appMetadata` replace what is there. `appMetadata` is data only your server can change
+   * (a plan, a customer id). `maxMembers` sets the seats (`null` removes the limit), `requireMfa` makes members use a second factor,
+   * and `suspended` stops everyone from working in it until it is set back to `false`.
+   */
+  update(
+    slug: string,
+    changes: { name?: string; metadata?: Body; appMetadata?: Body; maxMembers?: number | null; requireMfa?: boolean; suspended?: boolean },
+  ): Promise<Api> {
+    return this.patch(seg("orgs", slug), {
+      ...(changes.name !== undefined ? { name: changes.name } : {}),
+      ...(changes.metadata !== undefined ? { metadata: changes.metadata } : {}),
+      ...(changes.appMetadata !== undefined ? { app_metadata: changes.appMetadata } : {}),
+      ...(changes.maxMembers !== undefined ? { max_members: changes.maxMembers } : {}),
+      ...(changes.requireMfa !== undefined ? { require_mfa: changes.requireMfa } : {}),
+      ...(changes.suspended !== undefined ? { suspended: changes.suspended } : {}),
+    });
   }
 
   remove(slug: string): Promise<Api> {

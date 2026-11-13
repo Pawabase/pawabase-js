@@ -21,6 +21,8 @@ export interface User {
   app_metadata: Record<string, unknown>;
   roles: string[];
   mfa_enabled: boolean;
+  /** A guest account (`signInAnonymously`), until it is upgraded. */
+  is_anonymous?: boolean;
   identities: Identity[];
   created_at: string | null;
   last_sign_in_at: string | null;

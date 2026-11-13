@@ -148,7 +148,7 @@ export class RealtimeClient {
    * search and list policy apply, so you only ever get rows you could read. The table needs **Broadcast changes** on.
    *
    * ```ts
-   * const open = pawabase.realtime.live<Task>("tasks", { filter: { done: "eq.false" }, sort: "-created_at", limit: 20 });
+   * const open = pawabase.realtime.live<Task>("tasks", { filter: { done: "is.false" }, sort: "-created_at", limit: 20 });
    * open.onChange(({ data }) => render(data));
    * // later: open.stop();
    * ```
@@ -591,7 +591,10 @@ export class RealtimeClient {
 
 /** What a live query reads: the same options as listing a resource over REST. */
 export interface LiveQueryOptions {
-  /** `{ status: "eq.paid", total: "gte.1000" }`; a bare value means `eq`. */
+  /**
+   * `{ status: "eq.paid", total: "gte.1000" }`; a bare value means `eq`. Sent as written: filter booleans and nulls with `is`
+   * (`{ done: "is.false" }`), because `eq.false` does not match boolean columns correctly.
+   */
   filter?: Record<string, string | number | boolean>;
   /** `"-created_at,title"`: a leading `-` sorts descending. */
   sort?: string;
@@ -599,7 +602,7 @@ export interface LiveQueryOptions {
   select?: string;
   /** Full-text search over the resource's search fields. */
   q?: string;
-  /** Rows per result, 1–100. Default 20. */
+  /** Rows per result, 1–200. Default 20. */
   limit?: number;
   offset?: number;
 }

@@ -4,13 +4,14 @@ import { generateTypes } from "../typegen.js";
 const USAGE = `pawabase-types: generate TypeScript types for createClient<Database>()
 
 Usage:
-  pawabase-types --url <gateway> --project <ref> --env <name> [--out types.ts]
+  pawabase-types --url <gateway> --env <name> --api-key <key> [--out types.ts]
+  pawabase-types --url <gateway> --env <name> [--out types.ts]       (public API reference on)
   pawabase-types --file openapi.json [--out types.ts]
 
 Options:
   --url, -u       The gateway origin             (env PAWABASE_URL)
-  --project, -p   The project's ref              (env PAWABASE_PROJECT)
-  --env, -e       The environment's name         (env PAWABASE_ENV)
+  --env, -e       The environment's full name    (env PAWABASE_ENV)
+  --project, -p   Accepted and ignored (older versions needed it)
   --api-key, -k   An API key, sent as 'apikey'   (env PAWABASE_API_KEY)
   --file, -f      Read the OpenAPI document from a file instead of the gateway
   --out, -o       Where to write the types. Default: pawabase.types.ts. '-' prints them.
@@ -18,9 +19,9 @@ Options:
   --check         Exit 1 if --out is out of date (for CI); writes nothing
   --help, -h      Show this
 
-The gateway serves /docs/v1/<project>/<env>/openapi.json when the environment's
-"public docs" setting is on. Otherwise download the document from Studio (API
-Explorer) and pass it with --file.
+With an API key the document is read from /rest/v1/openapi.json, as that key sees
+it. Without one it is read from /docs/v1/<env>/openapi.json, which the gateway
+serves only when the environment's "Publish the API reference" setting is on.
 `;
 
 function parse(argv: string[]): Record<string, string | boolean> {
@@ -54,16 +55,20 @@ async function main(): Promise<number> {
     spec = JSON.parse(readFileSync(file, "utf8"));
     source = file;
   } else {
-    if (!url || !project || !env) {
-      console.error("Give --url, --project and --env (or --file).\n\n" + USAGE);
+    if (!url || !env) {
+      console.error("Give --url and --env (or --file).\n\n" + USAGE);
       return 2;
     }
-    const endpoint = `${url.replace(/\/+$/, "")}/docs/v1/${encodeURIComponent(project)}/${encodeURIComponent(env)}/openapi.json`;
-    const response = await fetch(endpoint, { headers: apiKey ? { apikey: apiKey } : {} });
+    void project;
+    const base = url.replace(/\/+$/, "");
+    const endpoint = apiKey ? `${base}/rest/v1/openapi.json` : `${base}/docs/v1/${encodeURIComponent(env)}/openapi.json`;
+    const response = await fetch(endpoint, { headers: apiKey ? { apikey: apiKey, "x-environment": env } : {} });
     if (!response.ok) {
       console.error(
         `Could not read ${endpoint}: ${response.status}. ` +
-          (response.status === 404 ? "Turn on public docs for this environment, or use --file with the document from Studio." : ""),
+          (apiKey
+            ? "Check the key belongs to this environment."
+            : "Pass --api-key, turn on \"Publish the API reference\" for this environment, or use --file."),
       );
       return 1;
     }
