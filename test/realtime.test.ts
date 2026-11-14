@@ -420,3 +420,26 @@ test("a live query the server closes stops and reports why", async () => {
   client.dispose();
   await server.close();
 });
+
+test("a channel the server removes reports why and is not rejoined after a reconnect", async () => {
+  const server = await angula();
+  const client = connect(server.url);
+  const channel = client.realtime.channel("room:a");
+  const closed: { reason: string; removed?: boolean }[] = [];
+  channel.on("closed", (event) => closed.push(event));
+  await channel.subscribe();
+  server.send({ type: "channel_closed", channel: "room:a", reason: "removed by an administrator" });
+  await until(() => closed.length === 1);
+  assert.deepEqual(closed[0], { reason: "removed by an administrator", removed: true });
+  assert.equal(channel.subscribed, false);
+  const subscribes = () => server.received.filter((f) => f["type"] === "subscribe").length;
+  assert.equal(subscribes(), 1);
+  server.dropAll();
+  await until(() => server.connections === 2 && client.realtime.status === "open", 3000);
+  await tick();
+  assert.equal(subscribes(), 1, "a removed channel is not subscribed again on its own");
+  await channel.subscribe();
+  assert.equal(subscribes(), 2, "the app may subscribe again");
+  client.dispose();
+  await server.close();
+});

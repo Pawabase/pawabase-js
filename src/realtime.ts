@@ -54,8 +54,12 @@ export interface ChannelEvents<T, M> {
   message: ChannelMessage<T>;
   presence: PresenceChange<M>;
   subscribed: undefined;
-  /** The channel stopped receiving: unsubscribed, or the connection was lost (it resubscribes by itself when it can). */
-  closed: { reason: string };
+  /**
+   * The channel stopped receiving: unsubscribed, or the connection was lost (it resubscribes by itself when it can).
+   * `removed` is true when the server took the channel away (a rule changed, or an administrator removed you): it is not
+   * rejoined by itself; call `subscribe()` again if you want it back.
+   */
+  closed: { reason: string; removed?: boolean };
   error: RealtimeError;
 }
 
@@ -426,6 +430,10 @@ export class RealtimeClient {
         this.channels
           .get(String(frame["channel"]))
           ?.applyPresence((frame["joins"] as PresenceMember[]) ?? [], (frame["leaves"] as PresenceMember[]) ?? []);
+        return;
+      }
+      case "channel_closed": {
+        this.channels.get(String(frame["channel"]))?.markRemoved(String(frame["reason"] ?? "closed by the server"));
         return;
       }
       case "query_result": {
@@ -907,6 +915,15 @@ export class RealtimeChannel<T = unknown, M = Record<string, unknown>> {
       leaves: leaves as PresenceMember<M>[],
       members: this.presenceState(),
     });
+  }
+
+  /** @internal The server took the channel away. Unlike a dropped connection, it is not rejoined after a reconnect. */
+  markRemoved(reason: string): void {
+    this.wanted = false;
+    if (!this.joined) return;
+    this.joined = false;
+    this.members.clear();
+    this.emit("closed", { reason, removed: true });
   }
 
   /** @internal The connection dropped; the channel will rejoin by itself if it can. */
