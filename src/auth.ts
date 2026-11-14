@@ -726,13 +726,19 @@ export class AuthClient implements TokenProvider {
     window.location.assign(this.signInWithOAuthUrl(provider, options));
   }
 
+  /**
+   * How a keyless path names the environment: `<project>.<environment>`, the project alone for its default environment, or the
+   * full name a signed-in session carries.
+   */
   private scope(): { environment: string } {
+    const { project, environment } = this.options;
+    if (project) return { environment: environment ? `${project}.${environment}` : project };
     const claims = this.session ? decodeJwt(this.session.access_token) : null;
-    const environment = this.options.environment ?? (typeof claims?.["env"] === "string" ? claims["env"] : undefined);
-    if (!environment) {
-      throw new ConfigError("Social sign-in needs the environment: pass `environment` to createClient().");
+    const named = environment ?? (typeof claims?.["env"] === "string" ? claims["env"] : undefined);
+    if (!named) {
+      throw new ConfigError("Social sign-in needs the project: pass `project` to createClient().");
     }
-    return { environment };
+    return { environment: named };
   }
 
   /**

@@ -49,7 +49,7 @@ test("enums, arrays and odd names become valid types", () => {
 
 test("a typed client checks names and rows at compile time", async () => {
   const fake = await serve(() => ({ status: 201, body: { id: 1, title: "x" } }));
-  const db = createClient<Database>({ url: fake.url, apiKey: "pk", retry: false });
+  const db = createClient<Database>({project: "P1",  url: fake.url, apiKey: "pk", retry: false });
   await db.from("posts").create({ title: "ok", views: 3 });
   // @ts-expect-error title is required
   await db.from("posts").create({ views: 3 });

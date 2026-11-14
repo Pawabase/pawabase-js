@@ -17,7 +17,9 @@ import { createClient } from "@pawabase/client";
 
 const pawabase = createClient({
   url: "https://api.example.com",       // your gateway
-  apiKey: "pb_pk_…",                    // a publishable key
+  project: "01JC4…",                    // your project's id (Studio → Overview → Connect)
+  apiKey: "pb_pk_…",                    // a publishable key of the project
+  // environment: "production",         // optional: its name in the project; left out, the project's default
 });
 
 await pawabase.auth.signInWithPassword({ email: "ada@example.com", password: "…" });
@@ -36,8 +38,11 @@ const { data, total } = await pawabase
 
 ## Keys
 
-Every request carries your project key in the `apikey` header; a signed-in user's token goes in
-`Authorization` automatically.
+A key belongs to a project. It reaches every environment of the project, or only the ones it was limited to when it was
+made (Studio → Settings → API keys). Every request carries the key in the `apikey` header, the project in `x-project-id`, and
+the environment you named in `x-environment` (left out, the project's default environment answers, or the key's only one).
+A signed-in user's token goes in `Authorization` automatically. Keys made before keys belonged to projects keep working: each
+reaches the one environment it was made for.
 
 | Key | Where | What it does |
 | --- | --- | --- |
@@ -135,7 +140,7 @@ with a secret key.
 **Social sign-in** needs the `environment` in the options, because the provider URL names it (a publishable key only: a secret key is refused):
 
 ```ts
-const pawabase = createClient({ url, apiKey, environment: "production" });
+const pawabase = createClient({ url, project, apiKey, environment: "production" });
 pawabase.auth.signInWithOAuth("github", { redirectTo: location.origin });  // redirects
 // On return, the tokens in the URL fragment are picked up automatically (detectSessionInUrl).
 ```
@@ -220,7 +225,7 @@ import { createClient } from "@pawabase/client";
 import { manage } from "@pawabase/client/manage";
 import { admin } from "@pawabase/client/admin";
 
-const pawabase = createClient({ url, apiKey: process.env.PAWABASE_SECRET_KEY!, environment: "production" });
+const pawabase = createClient({ url, project, apiKey: process.env.PAWABASE_SECRET_KEY!, environment: "production" });
 const m = manage(pawabase);
 
 await m.secrets.set("STRIPE_KEY", "sk_live_…");
@@ -313,7 +318,7 @@ const asUser = pawabase.asUser(tokenFromTheRequest);
 await asUser.from("tasks").all();
 
 // A server acting as itself, bypassing policies.
-const server = createClient({ url, apiKey: process.env.PAWABASE_SECRET_KEY! });
+const server = createClient({ url, project, apiKey: process.env.PAWABASE_SECRET_KEY! });
 ```
 
 ## Testing your app

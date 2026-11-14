@@ -8,7 +8,7 @@
  * import { createClient } from "@pawabase/client";
  * import { admin } from "@pawabase/client/admin";
  *
- * const a = admin(createClient({ url, apiKey: "pb_sk_…", environment: "production" }));
+ * const a = admin(createClient({ url, project, apiKey: "pb_sk_…", environment: "production" }));
  * await a.users.create({ email: "ada@example.com", password: "…", roles: ["editor"] });
  * await a.users.update(userId, { disabled: true });
  * await a.orgs.addMember("acme", { email: "ada@example.com", role: "admin" });

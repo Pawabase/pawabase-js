@@ -8,7 +8,7 @@ after(closeAll);
 const base = { apiKey: "pk_test", retry: false as const };
 
 function memoryClient(url: string, extra: Record<string, unknown> = {}) {
-  return createClient({ url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false }, ...extra });
+  return createClient({ project: "P1", url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false }, ...extra });
 }
 
 test("signUp signs the user in and emits SIGNED_IN", async () => {
@@ -136,7 +136,7 @@ test("a refresh that fails for a passing reason keeps a still-valid session", as
 test("the auto-refresh timer renews the session before it expires", async () => {
   let n = 0;
   const fake = await serve(() => ({ body: sessionBody(3600, { access_token: `auto-${++n}` }) }));
-  const client = createClient({ url: fake.url, ...base, auth: { storage: new MemoryStorage(), refreshMarginSeconds: 3598 } });
+  const client = createClient({ project: "P1", url: fake.url, ...base, auth: { storage: new MemoryStorage(), refreshMarginSeconds: 3598 } });
   await client.auth.initialized();
   const events: string[] = [];
   client.auth.onAuthStateChange((e) => events.push(e));
@@ -152,10 +152,10 @@ test("the auto-refresh timer renews the session before it expires", async () => 
 test("a session persists in the storage and is read by a new client", async () => {
   const fake = await serve(() => ({ body: sessionBody(3600, { access_token: "kept" }) }));
   const storage = new MemoryStorage();
-  const first = createClient({ url: fake.url, ...base, auth: { storage, autoRefreshToken: false } });
+  const first = createClient({ project: "P1", url: fake.url, ...base, auth: { storage, autoRefreshToken: false } });
   await first.auth.signInWithPassword({ email: "a@b.co", password: "pw" });
   first.dispose();
-  const second = createClient({ url: fake.url, ...base, auth: { storage, autoRefreshToken: false } });
+  const second = createClient({ project: "P1", url: fake.url, ...base, auth: { storage, autoRefreshToken: false } });
   assert.equal((await second.auth.getSession())?.access_token, "kept");
   second.dispose();
 });
@@ -168,7 +168,7 @@ test("a corrupt stored session is discarded", async () => {
   const key = (client0.auth as unknown as { storageKey: string }).storageKey;
   client0.dispose();
   storage.setItem(key, "{not json");
-  const client = createClient({ url: fake.url, ...base, auth: { storage, autoRefreshToken: false } });
+  const client = createClient({ project: "P1", url: fake.url, ...base, auth: { storage, autoRefreshToken: false } });
   assert.equal(await client.auth.getSession(), null);
   assert.equal(storage.getItem(key), null);
   client.dispose();
@@ -288,18 +288,19 @@ test("switchOrg refreshes with the organization; null clears it", async () => {
   client.dispose();
 });
 
-test("the OAuth URL needs the environment and never carries a secret key", async () => {
+test("the OAuth URL names the project's environment and never carries a secret key", async () => {
   const fake = await serve(() => ({ body: {} }));
+  // No environment: the project alone, which the server reads as its default environment.
   const without = memoryClient(fake.url);
-  assert.throws(() => without.auth.signInWithOAuthUrl("github"), ConfigError);
+  assert.equal(new URL(without.auth.signInWithOAuthUrl("github")).pathname, "/auth/v1/authorize/P1/github");
   without.dispose();
   const client = memoryClient(fake.url, { environment: "production" });
   const url = new URL(client.auth.signInWithOAuthUrl("github", { redirectTo: "https://app/cb" }));
-  assert.equal(url.pathname, "/auth/v1/authorize/production/github");
+  assert.equal(url.pathname, "/auth/v1/authorize/P1.production/github");
   assert.equal(url.searchParams.get("redirect_to"), "https://app/cb");
   assert.equal(url.searchParams.get("apikey"), "pk_test");
   client.dispose();
-  const secretKey = createClient({ url: fake.url, apiKey: "pb_sk_test", environment: "production", auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
+  const secretKey = createClient({ project: "P1", url: fake.url, apiKey: "pb_sk_test", environment: "production", auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
   assert.throws(() => secretKey.auth.signInWithOAuthUrl("github"), ConfigError);
   secretKey.dispose();
 });
@@ -400,7 +401,7 @@ test("two tabs: a session another tab already refreshed is adopted instead of re
     return { body: sessionBody(3600) };
   });
   const storage = new MemoryStorage();
-  const a = createClient({ url: fake.url, ...base, auth: { storage, autoRefreshToken: false } });
+  const a = createClient({ project: "P1", url: fake.url, ...base, auth: { storage, autoRefreshToken: false } });
   await a.auth.initialized();
   const key = (a.auth as unknown as { storageKey: string }).storageKey;
   const stale = sessionBody(5, { refresh_token: "old" });
@@ -503,7 +504,7 @@ test("integration tokens are issued for the session and verified with the public
   assert.equal(issued.audience, "https://billing");
   assert.deepEqual(fake.requests[0]!.json, { profile: "billing" });
   assert.equal((await client.auth.jwks()).keys[0]!.kid, "k1");
-  assert.equal(fake.requests[1]!.path, "/auth/v1/token-keys/production/jwks");
+  assert.equal(fake.requests[1]!.path, "/auth/v1/token-keys/P1.production/jwks");
   client.dispose();
 });
 

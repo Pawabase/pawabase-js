@@ -147,10 +147,10 @@ test("the signed-in user's token goes in the URL; a refreshed token is sent as a
   const server = await angula();
   const http = await serve((req) => (req.path === "/auth/v1/token" ? { body: sessionBody(3600, { access_token: "refreshed" }) } : { body: sessionBody(3600, { access_token: "first" }) }));
   const storage = new MemoryStorage();
-  const auth = createClient({ url: http.url, apiKey: "pk", retry: false, auth: { storage, autoRefreshToken: false } });
+  const auth = createClient({ project: "P1", url: http.url, apiKey: "pk", retry: false, auth: { storage, autoRefreshToken: false } });
   await auth.auth.signInWithPassword({ email: "a@b.co", password: "pw" });
   auth.dispose();
-  const client = createClient({
+  const client = createClient({ project: "P1", 
     url: server.url,
     apiKey: "pk_rt",
     retry: false,
@@ -299,7 +299,7 @@ test("a close with the missing-key code does not reconnect", async () => {
 test("a refused token (4003) triggers one refresh and a reconnect", async () => {
   const server = await angula({ closeOnConnect: [4003] });
   const http = await serve(() => ({ body: sessionBody(3600, { access_token: "renewed" }) }));
-  const client = createClient({
+  const client = createClient({ project: "P1", 
     url: server.url,
     apiKey: "pk",
     retry: false,
@@ -350,7 +350,7 @@ test("without a WebSocket implementation the error says what to do", async () =>
   const globalWs = (globalThis as Record<string, unknown>)["WebSocket"];
   delete (globalThis as Record<string, unknown>)["WebSocket"];
   try {
-    const client = createClient({ url: http.url, apiKey: "pk", auth: { storage: new MemoryStorage() } });
+    const client = createClient({ project: "P1", url: http.url, apiKey: "pk", auth: { storage: new MemoryStorage() } });
     await assert.rejects(client.realtime.connect(), /webSocket/);
     client.dispose();
   } finally {

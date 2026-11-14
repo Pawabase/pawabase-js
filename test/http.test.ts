@@ -10,7 +10,7 @@ const fast = { retry: { baseDelayMs: 1, maxDelayMs: 5 } } as const;
 
 test("every request carries the API key and client info, and errors carry the request id", async () => {
   const fake = await serve(() => ({ status: 404, body: "Not found" }));
-  const client = createClient({ url: fake.url, apiKey: "pk_test_1", ...fast });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk_test_1", ...fast });
   try {
     await client.from("posts").get(1);
     assert.fail("should have thrown");
@@ -29,7 +29,7 @@ test("a 429 is retried for any method, honouring Retry-After", async () => {
   const fake = await serve((_req, index) =>
     index < 2 ? { status: 429, body: { error: "rate_limit_exceeded", retry_after: 0 }, headers: { "retry-after": "0" } } : { status: 201, body: { id: 1 } },
   );
-  const client = createClient({ url: fake.url, apiKey: "pk", ...fast });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", ...fast });
   const created = await client.from("posts").create({ title: "x" });
   assert.deepEqual(created, { id: 1 });
   assert.equal(fake.requests.length, 3);
@@ -39,7 +39,7 @@ test("a 429 is retried for any method, honouring Retry-After", async () => {
 
 test("a Retry-After beyond the cap is surfaced, not waited for", async () => {
   const fake = await serve(() => ({ status: 429, body: { error: "rate_limit_exceeded", retry_after: 120 }, headers: { "retry-after": "120" } }));
-  const client = createClient({ url: fake.url, apiKey: "pk", retry: { baseDelayMs: 1, maxRetryAfterMs: 1000 } });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", retry: { baseDelayMs: 1, maxRetryAfterMs: 1000 } });
   await assert.rejects(client.from("posts").list(), (error: unknown) => error instanceof RateLimitError && error.retryAfter === 120);
   assert.equal(fake.requests.length, 1);
   client.dispose();
@@ -48,7 +48,7 @@ test("a Retry-After beyond the cap is surfaced, not waited for", async () => {
 
 test("a GET is retried on 503; a POST is not", async () => {
   const fake = await serve((req, index) => (req.method === "GET" && index === 0 ? { status: 503, body: "busy" } : req.method === "GET" ? { status: 200, body: { data: [], page: 1, per_page: 20, total: 0 } } : { status: 503, body: "busy" }));
-  const client = createClient({ url: fake.url, apiKey: "pk", ...fast });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", ...fast });
   const page = await client.from("posts").list();
   assert.equal(page.total, 0);
   assert.equal(fake.requests.length, 2);
@@ -60,7 +60,7 @@ test("a GET is retried on 503; a POST is not", async () => {
 
 test("a 500 is never retried", async () => {
   const fake = await serve(() => ({ status: 500, text: "Internal Server Error" }));
-  const client = createClient({ url: fake.url, apiKey: "pk", ...fast });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", ...fast });
   await assert.rejects(client.from("posts").list(), ServerError);
   assert.equal(fake.requests.length, 1);
   client.dispose();
@@ -69,7 +69,7 @@ test("a 500 is never retried", async () => {
 
 test("retries can be turned off", async () => {
   const fake = await serve(() => ({ status: 503, body: "busy" }));
-  const client = createClient({ url: fake.url, apiKey: "pk", retry: false });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", retry: false });
   await assert.rejects(client.from("posts").list(), ServerError);
   assert.equal(fake.requests.length, 1);
   client.dispose();
@@ -80,9 +80,9 @@ test("an unreachable server is a NetworkError, retried for safe methods", async 
   const fake = await serve(() => ({ body: {} }));
   const url = fake.url;
   await fake.close();
-  const client = createClient({ url, apiKey: "pk", ...fast, retry: { retries: 2, baseDelayMs: 1, maxDelayMs: 2 } });
+  const client = createClient({ project: "P1", url, apiKey: "pk", ...fast, retry: { retries: 2, baseDelayMs: 1, maxDelayMs: 2 } });
   let retries = 0;
-  const hooked = createClient({
+  const hooked = createClient({ project: "P1", 
     url,
     apiKey: "pk",
     retry: { retries: 2, baseDelayMs: 1, maxDelayMs: 2 },
@@ -97,7 +97,7 @@ test("an unreachable server is a NetworkError, retried for safe methods", async 
 
 test("a slow server times out", async () => {
   const fake = await serve(() => ({ body: {}, delayMs: 300 }));
-  const client = createClient({ url: fake.url, apiKey: "pk", timeoutMs: 40, retry: false });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", timeoutMs: 40, retry: false });
   await assert.rejects(client.from("posts").list(), (error: unknown) => error instanceof TimeoutError && error.timeoutMs === 40);
   client.dispose();
   await fake.close();
@@ -105,7 +105,7 @@ test("a slow server times out", async () => {
 
 test("the caller's signal aborts, and an abort is not retried", async () => {
   const fake = await serve(() => ({ body: {}, delayMs: 300 }));
-  const client = createClient({ url: fake.url, apiKey: "pk", ...fast });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", ...fast });
   const controller = new AbortController();
   const pending = client.from("posts").query().withOptions({ signal: controller.signal }).execute();
   setTimeout(() => controller.abort(), 20);
@@ -118,7 +118,7 @@ test("the caller's signal aborts, and an abort is not retried", async () => {
 test("hooks see requests and responses, with secrets masked", async () => {
   const fake = await serve(() => ({ body: { data: [], page: 1, per_page: 20, total: 0 } }));
   const seen: string[] = [];
-  const client = createClient({
+  const client = createClient({ project: "P1", 
     url: fake.url,
     apiKey: "pk_secretish",
     hooks: {
@@ -134,7 +134,7 @@ test("hooks see requests and responses, with secrets masked", async () => {
 
 test("a throwing hook never fails the request", async () => {
   const fake = await serve(() => ({ body: { data: [], page: 1, per_page: 20, total: 0 } }));
-  const client = createClient({ url: fake.url, apiKey: "pk", hooks: { onRequest: () => { throw new Error("boom"); } } });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", hooks: { onRequest: () => { throw new Error("boom"); } } });
   await client.from("posts").list();
   client.dispose();
   await fake.close();
@@ -150,7 +150,7 @@ test("a rejected token is refreshed once, shared by concurrent requests, and the
     if (req.headers["authorization"] === `Bearer ${current}`) return { body: { data: [], page: 1, per_page: 20, total: 0 } };
     return { status: 401, body: "Authentication required" };
   });
-  const client = createClient({ url: fake.url, apiKey: "pk", ...fast, auth: { persistSession: false, autoRefreshToken: false } });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", ...fast, auth: { persistSession: false, autoRefreshToken: false } });
   // Seed a session whose access token the server will reject.
   const seed = { ...sessionBody(3600, { access_token: "access-old", refresh_token: "refresh-old" }) };
   await client.auth.initialized();
@@ -167,7 +167,7 @@ test("a rejected token is refreshed once, shared by concurrent requests, and the
 
 test("a 401 with a token that cannot be refreshed surfaces and signs out", async () => {
   const fake = await serve((req) => (req.path === "/auth/v1/token" ? { status: 400, body: "invalid refresh token" } : { status: 401, body: "Authentication required" }));
-  const client = createClient({ url: fake.url, apiKey: "pk", ...fast, auth: { persistSession: false, autoRefreshToken: false } });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk", ...fast, auth: { persistSession: false, autoRefreshToken: false } });
   await client.auth.initialized();
   // @ts-expect-error seed
   client.auth.session = sessionBody();
@@ -182,7 +182,7 @@ test("a 401 with a token that cannot be refreshed surfaces and signs out", async
 
 test("JSON bodies get a content type; Blob bodies keep their own", async () => {
   const fake = await serve(() => ({ status: 201, body: { id: 1 } }));
-  const client = createClient({ url: fake.url, apiKey: "pk" });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pk" });
   await client.from("posts").create({ title: "x" });
   assert.equal(fake.requests[0]!.headers["content-type"], "application/json");
   assert.deepEqual(fake.requests[0]!.json, { title: "x" });

@@ -8,7 +8,7 @@
  *
  * ```ts
  * const pawabase = createClient({
- *   url, apiKey,
+ *   url, project, apiKey,
  *   auth: { captcha: { getToken: (challenge) => showTurnstile(challenge.site_key, challenge.action) } },
  * });
  * ```

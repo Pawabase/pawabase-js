@@ -18,7 +18,7 @@ test("findSSO asks which company login serves an address, and answers null when 
   const fake = await serve((request) =>
     request.json?.email === "ada@acme.com" ? { body: found } : { status: 404, body: { detail: "no enterprise sign-in for this address" } },
   );
-  const db = createClient({ url: fake.url, apiKey: "pb_pk_x", environment: "prod", retry: false, auth: { persistSession: false } });
+  const db = createClient({ project: "P1", url: fake.url, apiKey: "pb_pk_x", environment: "prod", retry: false, auth: { persistSession: false } });
   assert.deepEqual(await db.auth.findSSO({ email: "ada@acme.com" }), found);
   assert.equal(fake.requests[0]!.path, "/auth/v1/sso/lookup");
   assert.deepEqual(fake.requests[0]!.json, { email: "ada@acme.com" });
@@ -33,7 +33,7 @@ test("a password sign-in refused for a required company login carries the connec
     status: 403,
     body: { code: "sso_required", message: "Acme signs its people in with its company login", connection: "acme-okta", organization: "acme" },
   }));
-  const db = createClient({ url: fake.url, apiKey: "pb_pk_x", environment: "prod", retry: false, auth: { persistSession: false } });
+  const db = createClient({ project: "P1", url: fake.url, apiKey: "pb_pk_x", environment: "prod", retry: false, auth: { persistSession: false } });
   const refused = await db.auth.signInWithPassword({ email: "ada@acme.com", password: "p" }).catch((error: unknown) => error);
   assert.ok(refused instanceof ApiError);
   assert.equal(refused.status, 403);
@@ -42,7 +42,7 @@ test("a password sign-in refused for a required company login carries the connec
 
 test("admin ssoConnections speaks the server's field names", async () => {
   const fake = await serve(() => ({ body: { name: "acme-okta" } }));
-  const a = admin(createClient({ url: fake.url, apiKey: "pb_sk_x", environment: "prod", retry: false }));
+  const a = admin(createClient({ project: "P1", url: fake.url, apiKey: "pb_sk_x", environment: "prod", retry: false }));
   await a.ssoConnections.create({
     name: "acme-okta",
     type: "oidc",

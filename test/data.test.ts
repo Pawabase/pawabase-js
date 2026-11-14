@@ -25,7 +25,7 @@ const emptyPage = { data: [], page: 1, per_page: 20, total: 0 };
 
 async function client(handler: Parameters<typeof serve>[0]) {
   const fake = await serve(handler);
-  return { fake, db: createClient<DB>({ url: fake.url, apiKey: "pk", retry: false }) };
+  return { fake, db: createClient<DB>({project: "P1",  url: fake.url, apiKey: "pk", retry: false }) };
 }
 
 function sent(fake: Fake, index = -1): URLSearchParams {

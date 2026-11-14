@@ -8,24 +8,27 @@ import { closeAll, serve } from "./helpers.js";
 after(closeAll);
 
 test("fileUrl is the keyless gateway address, with image options", () => {
-  const db = createClient({ url: "https://api.example.com", apiKey: "pb_pk_x", environment: "acme-prod", retry: false });
-  assert.equal(db.storage.from("avatars").fileUrl("u 1/me.png"), "https://api.example.com/storage/v1/files/acme-prod/avatars/u%201/me.png");
+  const db = createClient({ project: "P1", url: "https://api.example.com", apiKey: "pb_pk_x", environment: "acme-prod", retry: false });
+  assert.equal(db.storage.from("avatars").fileUrl("u 1/me.png"), "https://api.example.com/storage/v1/files/P1.acme-prod/avatars/u%201/me.png");
+  // No environment: the project alone names its default environment.
+  const plain = createClient({ project: "P1", url: "https://api.example.com", apiKey: "pb_pk_x", retry: false });
+  assert.equal(plain.storage.from("avatars").fileUrl("me.png"), "https://api.example.com/storage/v1/files/P1/avatars/me.png");
   const url = new URL(db.storage.from("avatars").fileUrl("me.png", { width: 96, fit: "cover", format: "auto" }));
   assert.equal(url.searchParams.get("width"), "96");
   assert.equal(url.searchParams.get("fit"), "cover");
-  assert.throws(() => createClient({ url: "https://x", apiKey: "pk" }).storage.from("a").fileUrl("k"), ConfigError);
+  assert.throws(() => createClient({ url: "https://x", apiKey: "pk" } as never), (error: unknown) => error instanceof ConfigError && /Pass `project`/.test((error as Error).message));
   db.dispose();
 });
 
 test("share links need a secret key and go to the bucket's shares", async () => {
   const fake = await serve(() => ({ status: 201, body: { id: "s1", url: "https://x/storage/v1/share/pbs_1" } }));
-  const server = createClient({ url: fake.url, apiKey: "pb_sk_secret", environment: "acme-prod", retry: false });
+  const server = createClient({ project: "P1", url: fake.url, apiKey: "pb_sk_secret", environment: "acme-prod", retry: false });
   const share = await server.storage.from("contracts").createShareLink("acme/msa.pdf", { expiresIn: 600, permissions: "download" });
   assert.equal(share.id, "s1");
   const sent = fake.requests[0]!;
   assert.equal(sent.path, "/platform/v1/envs/acme-prod/buckets/contracts/shares");
   assert.deepEqual(sent.json, { key: "acme/msa.pdf", expires_in: 600, permissions: "download", label: "" });
-  const browser = createClient({ url: fake.url, apiKey: "pb_pk_public", environment: "acme-prod", retry: false });
+  const browser = createClient({ project: "P1", url: fake.url, apiKey: "pb_pk_public", environment: "acme-prod", retry: false });
   assert.throws(() => browser.storage.from("contracts").createShareLink("k"), ConfigError);
   server.dispose();
   browser.dispose();
@@ -33,7 +36,7 @@ test("share links need a secret key and go to the bucket's shares", async () => 
 
 test("similar() sends where conditions as list filters", async () => {
   const fake = await serve(() => ({ body: { data: [], metric: "cosine", count: 0 } }));
-  const db = createClient({ url: fake.url, apiKey: "pk", retry: false });
+  const db = createClient({ project: "P1", url: fake.url, apiKey: "pk", retry: false });
   await db.from("notes").similar({ text: "refunds", where: { kind: "public", archived: false, rank: { gte: 2 } } });
   const sent = fake.requests[0]!;
   assert.equal(sent.query.get("filter[kind]"), "eq.public");
@@ -53,7 +56,7 @@ test("rememberDevice and acceptedTerms reach the server", async () => {
         ? { body: { access_token: "a", refresh_token: "r", expires_in: 900, user: { id: "u" } } }
         : { status: 201, body: { user: { id: "u" }, verification_required: true } },
   );
-  const db = createClient({ url: fake.url, apiKey: "pk", retry: false, auth: { persistSession: false } });
+  const db = createClient({ project: "P1", url: fake.url, apiKey: "pk", retry: false, auth: { persistSession: false } });
   const result = await db.auth.signInWithPassword({ email: "a@b.c", password: "p", rememberDevice: true });
   assert.equal(result.status, "mfa_required");
   if (result.status === "mfa_required") await result.verify("123456");
@@ -66,7 +69,7 @@ test("rememberDevice and acceptedTerms reach the server", async () => {
 
 test("admin orgs.update sends app_metadata, seats, MFA and suspension", async () => {
   const fake = await serve(() => ({ body: {} }));
-  const a = admin(createClient({ url: fake.url, apiKey: "pb_sk_s", environment: "acme-prod", retry: false }));
+  const a = admin(createClient({ project: "P1", url: fake.url, apiKey: "pb_sk_s", environment: "acme-prod", retry: false }));
   await a.orgs.update("acme", { appMetadata: { plan: "pro" }, maxMembers: null, requireMfa: true, suspended: false });
   const sent = fake.requests[0]!;
   assert.equal(sent.method, "PATCH");
@@ -75,7 +78,7 @@ test("admin orgs.update sends app_metadata, seats, MFA and suspension", async ()
 
 test("manage mail: send, retry, cancel, stats", async () => {
   const fake = await serve(() => ({ body: {} }));
-  const m = manage(createClient({ url: fake.url, apiKey: "pb_sk_s", environment: "acme-prod", retry: false }));
+  const m = manage(createClient({ project: "P1", url: fake.url, apiKey: "pb_sk_s", environment: "acme-prod", retry: false }));
   await m.mail.send({ to: ["ada@example.com"], template: "welcome", data: { name: "Ada" }, scheduledAt: new Date("2026-12-01T09:00:00Z") });
   await m.mail.retry(7);
   await m.mail.cancel("8");

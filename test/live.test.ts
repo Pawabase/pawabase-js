@@ -164,7 +164,7 @@ describe("live: data", { skip: !live }, () => {
   });
 
   test("a wrong API key is a typed gateway error", async () => {
-    const db = createClient({ url: live!["url"]!, apiKey: "pb_pk_wrong", retry: false });
+    const db = createClient({ project: "P1", url: live!["url"]!, apiKey: "pb_pk_wrong", retry: false });
     await assert.rejects(db.from("posts").list(), (e: unknown) => e instanceof AuthenticationError && e.code === "invalid_api_key");
     db.dispose();
   });

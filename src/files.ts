@@ -175,15 +175,13 @@ export class BucketClient {
   }
 
   /**
-   * The object's stable address on the gateway, `…/storage/v1/files/<environment>/<bucket>/<key>`, with no key in it. Anyone can
+   * The object's stable address on the gateway, `…/storage/v1/files/<project>.<environment>/<bucket>/<key>` (or `<project>`
+   * alone for the project's default environment), with no key in it. Anyone can
    * open it when the bucket is public; otherwise the bucket's read rule decides. Pass `transform` for a resized image. Needs
-   * `environment` in the client options.
+   * `project` in the client options.
    */
   fileUrl(key: string, transform: ImageTransform = {}): string {
-    const environment = this.http.config.headers["x-environment"];
-    if (!environment) {
-      throw new ConfigError("fileUrl needs the environment: pass `environment` to createClient().");
-    }
+    const environment = fileEnvironment(this.http.config.headers);
     const query: Record<string, string | number> = {};
     for (const [name, value] of Object.entries(transform)) if (value !== undefined && value !== null) query[name] = value as string | number;
     return this.http.url(
@@ -218,8 +216,9 @@ export class BucketClient {
     if (!isSecretKey(this.http.config.apiKey)) {
       throw new ConfigError("Share links are made with a secret key. Create them on your server.");
     }
-    const environment = this.http.config.headers["x-environment"];
-    if (!environment) throw new ConfigError("Share links need the environment: pass `environment` to createClient().");
+    // The project's id in the environment's place means the environment this client is served by (its default, when it names none).
+    const environment = this.http.config.headers["x-environment"] || this.http.config.headers["x-project-id"];
+    if (!environment) throw new ConfigError("Share links need the project: pass `project` to createClient().");
     return `/platform/v1/envs/${encodeURIComponent(environment)}/buckets/${encodeURIComponent(this.name)}/${suffix}`;
   }
 
@@ -277,4 +276,15 @@ export class BucketClient {
   private opts(options: TransferOptions): { signal: AbortSignal | null | undefined; timeoutMs?: number } {
     return { signal: options.signal, ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}) };
   }
+}
+
+/** How a keyless file URL names the environment: `<project>.<environment>`, or the project alone for its default environment. */
+function fileEnvironment(headers: Record<string, string>): string {
+  const project = headers["x-project-id"];
+  const environment = headers["x-environment"];
+  if (!project) {
+    if (environment) return environment; // a full name, as before projects
+    throw new ConfigError("fileUrl needs the project: pass `project` to createClient().");
+  }
+  return environment ? `${project}.${environment}` : project;
 }

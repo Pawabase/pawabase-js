@@ -48,7 +48,7 @@ test("the built-in check is solved without the app doing anything, and the clear
     return required(puzzle(10));
   });
   const solving: boolean[] = [];
-  const client = createClient({ url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false, captcha: { onSolving: (on) => solving.push(on) } } });
+  const client = createClient({ project: "P1", url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false, captcha: { onSolving: (on) => solving.push(on) } } });
   const result = await client.auth.signInWithPassword({ email: "ada@example.com", password: "pw" });
   assert.equal(result.status, "signed_in");
   assert.equal(fake.requests.length, 2);
@@ -69,7 +69,7 @@ test("a hosted provider's widget is asked for through getToken", async () => {
     return req.headers["x-captcha-token"] === "widget-token" ? { status: 201, body: { ...sessionBody(), verification_required: false } } : required(turnstile);
   });
   const seen: CaptchaChallenge[] = [];
-  const client = createClient({
+  const client = createClient({ project: "P1", 
     url: fake.url,
     ...base,
     auth: { storage: new MemoryStorage(), autoRefreshToken: false, captcha: { getToken: (challenge) => (seen.push(challenge), "widget-token") } },
@@ -83,7 +83,7 @@ test("a hosted provider's widget is asked for through getToken", async () => {
 test("without a way to solve it, the refusal reaches the app with the check attached", async () => {
   const turnstile: CaptchaChallenge = { provider: "turnstile", site_key: "0x4AAA", action: "recover" };
   const fake = await serve((req) => (req.path === "/auth/v1/recover" ? required(turnstile) : undefined));
-  const client = createClient({ url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
+  const client = createClient({ project: "P1", url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
   await assert.rejects(client.auth.requestPasswordReset({ email: "ada@example.com" }), (error: unknown) => {
     assert.ok(isCaptchaError(error));
     assert.deepEqual(captchaChallengeOf(error), turnstile);
@@ -95,7 +95,7 @@ test("without a way to solve it, the refusal reaches the app with the check atta
 
 test("a token the app supplies is sent as it is, and its failure is not retried", async () => {
   const fake = await serve((req) => (req.path === "/auth/v1/magic-link" ? required(puzzle(10, "magic_link"), "captcha_failed") : undefined));
-  const client = createClient({ url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
+  const client = createClient({ project: "P1", url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
   await assert.rejects(client.auth.signInWithMagicLink({ email: "ada@example.com", captchaToken: "mine" }), (error: unknown) => error instanceof ApiError && error.code === "captcha_failed");
   assert.equal(fake.requests.length, 1);
   assert.equal(fake.requests[0]!.headers["x-captcha-token"], "mine");
@@ -104,7 +104,7 @@ test("a token the app supplies is sent as it is, and its failure is not retried"
 
 test("a page can ask ahead whether a check is needed", async () => {
   const fake = await serve((req) => (req.path === "/auth/v1/captcha/challenge" ? { body: { required: true, mode: "always", captcha: puzzle(10) } } : undefined));
-  const client = createClient({ url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
+  const client = createClient({ project: "P1", url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
   const ahead = await client.auth.captchaChallenge("signin", "ada@example.com");
   assert.equal(ahead.required, true);
   assert.deepEqual(fake.requests[0]!.json, { action: "signin", email: "ada@example.com" });
@@ -120,7 +120,7 @@ test("captcha.protect earns a pass for a form, and captcha.verify checks it", as
     if (req.path === "/auth/v1/captcha/siteverify") return { body: { success: req.json.response === "pbc1.ok", action: "contact", "error-codes": [] } };
     return undefined;
   });
-  const client = createClient({ url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
+  const client = createClient({ project: "P1", url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
   const earned = await client.captcha.protect("contact");
   assert.equal(earned.pass, "pbc1.ok");
   assert.equal(fake.requests[1]!.json.action, "contact");
@@ -138,7 +138,7 @@ test("captcha.protect asks getToken for a hosted provider, and redeems nothing w
     if (req.path === "/auth/v1/captcha/redeem") return { body: { pass: `pbc1.${req.json.token ?? "none"}`, action: "contact", expires_at: 9e9 } };
     return undefined;
   });
-  const client = createClient({ url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
+  const client = createClient({ project: "P1", url: fake.url, ...base, auth: { storage: new MemoryStorage(), autoRefreshToken: false } });
   await assert.rejects(client.captcha.protect("contact"), /pass getToken/);
   const shown: unknown[] = [];
   assert.equal((await client.captcha.protect("contact", { getToken: (c) => (shown.push(c), "widget") })).pass, "pbc1.widget");

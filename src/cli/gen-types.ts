@@ -11,7 +11,7 @@ Usage:
 Options:
   --url, -u       The gateway origin             (env PAWABASE_URL)
   --env, -e       The environment's full name    (env PAWABASE_ENV)
-  --project, -p   Accepted and ignored (older versions needed it)
+  --project, -p   The project's id (or PAWABASE_PROJECT): checked against the key, and used to name the environment without one
   --api-key, -k   An API key, sent as 'apikey'   (env PAWABASE_API_KEY)
   --file, -f      Read the OpenAPI document from a file instead of the gateway
   --out, -o       Where to write the types. Default: pawabase.types.ts. '-' prints them.
@@ -59,15 +59,17 @@ async function main(): Promise<number> {
       console.error("Give --url and --env (or --file).\n\n" + USAGE);
       return 2;
     }
-    void project;
     const base = url.replace(/\/+$/, "");
-    const endpoint = apiKey ? `${base}/rest/v1/openapi.json` : `${base}/docs/v1/${encodeURIComponent(env)}/openapi.json`;
-    const response = await fetch(endpoint, { headers: apiKey ? { apikey: apiKey, "x-environment": env } : {} });
+    // Without a key the environment is in the path: `<project>.<environment>` when the project is given, its full name otherwise.
+    const segment = project ? `${project}.${env}` : env;
+    const endpoint = apiKey ? `${base}/rest/v1/openapi.json` : `${base}/docs/v1/${encodeURIComponent(segment)}/openapi.json`;
+    const headers: Record<string, string> = apiKey ? { apikey: apiKey, "x-environment": env, ...(project ? { "x-project-id": project } : {}) } : {};
+    const response = await fetch(endpoint, { headers });
     if (!response.ok) {
       console.error(
         `Could not read ${endpoint}: ${response.status}. ` +
           (apiKey
-            ? "Check the key belongs to this environment."
+            ? "Check the key belongs to this project and reaches this environment."
             : "Pass --api-key, turn on \"Publish the API reference\" for this environment, or use --file."),
       );
       return 1;

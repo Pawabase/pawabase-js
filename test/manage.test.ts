@@ -15,14 +15,14 @@ const BASE = "/platform/v1/envs/production";
 
 async function secret() {
   const fake = await serve(() => ({ status: 200, body: { data: [] } }));
-  const client = createClient({ url: fake.url, apiKey: "pb_sk_test", environment: "production", retry: false });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pb_sk_test", environment: "production", retry: false });
   clients.push(client);
   return { fake, client, m: manage(client), last: () => fake.requests[fake.requests.length - 1]! };
 }
 
 test("the management plane needs a secret key and an environment", async () => {
   const fake = await serve(() => ({ body: {} }));
-  const publishable = createClient({ url: fake.url, apiKey: "pb_pk_test" });
+  const publishable = createClient({ project: "P1", url: fake.url, apiKey: "pb_pk_test" });
   clients.push(publishable);
   assert.throws(() => manage(publishable), ConfigError);
   assert.throws(() => admin(publishable), ConfigError);

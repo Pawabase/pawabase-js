@@ -5,7 +5,7 @@
  * import { createClient } from "@pawabase/client";
  * import { manage } from "@pawabase/client/manage";
  *
- * const pawabase = createClient({ url, apiKey: "pb_sk_…", environment: "production" });
+ * const pawabase = createClient({ url, project, apiKey: "pb_sk_…", environment: "production" });
  * const m = manage(pawabase);
  * await m.secrets.set("STRIPE_KEY", "sk_live_…");
  * await manage(pawabase, "staging").flows.list();     // the same API for another environment the key may manage

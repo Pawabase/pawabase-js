@@ -11,7 +11,7 @@ const BASE = "/platform/v1/envs/production";
 
 test("agents list, run and read a run", async () => {
   const fake = await serve((r) => ({ status: r.method === "POST" ? 201 : 200, body: r.path.endsWith("/agents") ? { data: [{ name: "support", description: "" }] } : { id: "r1", agent: "support", status: "done", output: "done" } }));
-  const client = createClient({ url: fake.url, ...options });
+  const client = createClient({ project: "P1", url: fake.url, ...options });
   assert.equal((await client.ai.agents.list())[0]!.name, "support");
   const run = await client.ai.agents.run("support", "hi", { thread: "t1" });
   assert.equal(run.output, "done");
@@ -25,7 +25,7 @@ test("agents list, run and read a run", async () => {
 
 test("an agent stream yields events and stops at [DONE]; an error event throws", async () => {
   const ok = await serve(() => ({ text: 'data: {"type":"text","text":"Hi"}\n\ndata: {"type":"done"}\n\ndata: [DONE]\n\n', headers: { "content-type": "text/event-stream" } }));
-  const client = createClient({ url: ok.url, ...options });
+  const client = createClient({ project: "P1", url: ok.url, ...options });
   const types: string[] = [];
   for await (const event of client.ai.agents.stream("support", "hi")) types.push(event.type);
   assert.deepEqual(types, ["text", "done"]);
@@ -33,7 +33,7 @@ test("an agent stream yields events and stops at [DONE]; an error event throws",
   client.dispose();
 
   const bad = await serve(() => ({ text: 'data: {"type":"error","message":"nope"}\n\n', headers: { "content-type": "text/event-stream" } }));
-  const failing = createClient({ url: bad.url, ...options });
+  const failing = createClient({ project: "P1", url: bad.url, ...options });
   await assert.rejects(async () => {
     for await (const _ of failing.ai.agents.stream("support", "hi")) void _;
   }, ApiError);
@@ -43,7 +43,7 @@ test("an agent stream yields events and stops at [DONE]; an error event throws",
 test("wait polls until the run is no longer running", async () => {
   let n = 0;
   const fake = await serve(() => ({ body: { id: "r1", agent: "a", status: ++n < 3 ? "running" : "done" } }));
-  const client = createClient({ url: fake.url, ...options });
+  const client = createClient({ project: "P1", url: fake.url, ...options });
   const run = await client.ai.agents.wait("r1", { intervalMs: 1 });
   assert.equal(run.status, "done");
   assert.equal(fake.requests.length, 3);
@@ -52,7 +52,7 @@ test("wait polls until the run is no longer running", async () => {
 
 test("knowledge search, add and status", async () => {
   const fake = await serve(() => ({ body: { data: [{ text: "x" }], id: "d1", status: "pending" } }));
-  const client = createClient({ url: fake.url, ...options });
+  const client = createClient({ project: "P1", url: fake.url, ...options });
   assert.equal((await client.ai.knowledge.search("docs", "reset", { limit: 3 })).length, 1);
   assert.equal(fake.requests[0]!.path, "/ai/v1/knowledge/docs/search");
   assert.deepEqual(fake.requests[0]!.json, { query: "reset", limit: 3 });
@@ -67,7 +67,7 @@ test("knowledge search, add and status", async () => {
 
 test("management: agents, runs, knowledge bases, connections and the rest", async () => {
   const fake = await serve(() => ({ body: { data: [] } }));
-  const client = createClient({ url: fake.url, ...options });
+  const client = createClient({ project: "P1", url: fake.url, ...options });
   const m = manage(client);
   const last = () => fake.requests[fake.requests.length - 1]!;
   await m.agents.run("support", "hi", { background: true });

@@ -12,7 +12,7 @@ const body =
 
 test("stream yields the frames of a Server-Sent Events body", async () => {
   const fake = await serve(() => ({ text: body, headers: { "content-type": "text/event-stream" } }));
-  const client = createClient({ url: fake.url, apiKey: "pb_pk_test", retry: false });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pb_pk_test", retry: false });
   const frames: Array<Record<string, any>> = [];
   for await (const frame of client.realtime.stream(["chat:lobby", "chat:ops"])) frames.push(frame);
   assert.deepEqual(frames.map((f) => f.type), ["welcome", "message"]);
@@ -26,7 +26,7 @@ test("stream yields the frames of a Server-Sent Events body", async () => {
 
 test("stream can be stopped early, needs a channel and surfaces errors", async () => {
   const fake = await serve((req) => (req.query.get("channels") === "secret" ? { status: 403, body: { detail: "not allowed" } } : { text: body }));
-  const client = createClient({ url: fake.url, apiKey: "pb_pk_test", retry: false });
+  const client = createClient({ project: "P1", url: fake.url, apiKey: "pb_pk_test", retry: false });
   for await (const frame of client.realtime.stream("chat:lobby")) {
     assert.equal(frame.type, "welcome");
     break;

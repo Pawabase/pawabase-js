@@ -20,14 +20,14 @@ type Untyped = { resources: Record<string, ResourceTypes> };
 export interface ClientOptions {
   /** The gateway's origin, e.g. `https://api.example.com`. */
   url: string;
-  /** The project API key: `pb_pk_…` (publishable, safe in a browser) or `pb_sk_…` (secret, servers only). */
+  /** A key of the project: `pb_pk_…` (publishable, safe in a browser) or `pb_sk_…` (secret, servers only). */
   apiKey: string;
+  /** The project's id (Studio → Overview → Connect). Every request names it, and the key must belong to it. */
+  project: string;
   /**
-   * The environment this client talks to (`development`, `production`, a preview's name). The API key already names
-   * one, so it is optional for data calls; social sign-in, realtime and the management clients (`@pawabase/client/manage`,
-   * `@pawabase/client/admin`) use it. `project` is only sent as a scope hint.
+   * The environment, by its name in the project: `development`, `production`, a preview's name. Leave it out to use the
+   * project's default environment (or the key's only one, when the key is limited to one).
    */
-  project?: string;
   environment?: string;
   /** Per-attempt timeout in milliseconds. Default `30000`; `0` disables it. */
   timeoutMs?: number;
@@ -63,7 +63,7 @@ function staticTokens(source: NonNullable<ClientOptions["accessToken"]>): TokenP
  * The entry point.
  *
  * ```ts
- * const pawabase = createClient({ url: "https://api.example.com", apiKey: "pb_pk_…" });
+ * const pawabase = createClient({ url: "https://api.example.com", project: "01JC4…", apiKey: "pb_pk_…" });
  * await pawabase.auth.signInWithPassword({ email, password });
  * const { data } = await pawabase.from("posts").eq("status", "live").order("created_at", "desc");
  * ```
@@ -96,6 +96,9 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
     }
     if (origin.protocol !== "http:" && origin.protocol !== "https:") {
       throw new ConfigError("The `url` must start with http:// or https://.");
+    }
+    if (!options.project || typeof options.project !== "string") {
+      throw new ConfigError("Pass `project`: your project's id, from Studio → Overview → Connect.");
     }
     if (isSecretKey(options.apiKey) && isBrowser() && !options.dangerouslyAllowBrowser) {
       throw new ConfigError(
