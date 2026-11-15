@@ -88,6 +88,11 @@ test("lifecycle calls are project-wide or environment-scoped", async () => {
   assert.equal(last().path, `${BASE}/snapshots/s1/restore`);
   assert.equal(last().json.confirm, "production");
   assert.equal(last().json.safety_snapshot, true);
+  await m.backups.restore({ format: "pawabase.backup" }, { strategy: "replace", confirm: "production" });
+  assert.equal(last().path, `${BASE}/restore`);
+  assert.equal("safety_snapshot" in (last().json as object), false, "left out, the server decides (yes for replace)");
+  await m.backups.restore({ format: "pawabase.backup" }, { safetySnapshot: false });
+  assert.equal(last().json.safety_snapshot, false);
   await m.versions.release("v2", "staging", { notes: "n" });
   assert.equal(last().path, `${BASE}/versions`);
   assert.deepEqual(last().json, { name: "v2", from_env: "staging", notes: "n" });

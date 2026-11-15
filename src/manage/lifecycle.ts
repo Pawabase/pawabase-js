@@ -99,6 +99,11 @@ export interface RestoreOptions {
   confirm?: string;
 }
 
+export interface FileRestoreOptions extends RestoreOptions {
+  /** Save the environment as it is first, so the restore can be undone. Default: yes for `replace`, no for `merge`. */
+  safetySnapshot?: boolean;
+}
+
 /** Whole-environment backups you download, stored snapshots, and restores. */
 export class Backups extends Service {
   /** A backup document: `definitions`, `settings`, `users` and, with `data`, rows (up to `maxRows` per table). */
@@ -106,9 +111,19 @@ export class Backups extends Service {
     return this.get("/backup", { include: options.include?.join(","), data: options.data ? "true" : undefined, max_rows: options.maxRows });
   }
 
-  /** Put a downloaded backup back. */
-  restore(backup: Body, options: RestoreOptions = {}): Promise<Api> {
-    return this.post("/restore", { backup, include: options.include, strategy: options.strategy ?? "merge", dry_run: options.dryRun ?? false, confirm: options.confirm });
+  /**
+   * Put a downloaded backup back. A `replace` saves the environment as it is first (a "Before a restore" snapshot, its id in the answer's
+   * `safety_snapshot`); pass `safetySnapshot` to choose. A dry run also returns `current`: what the environment holds now.
+   */
+  restore(backup: Body, options: FileRestoreOptions = {}): Promise<Api> {
+    return this.post("/restore", {
+      backup,
+      include: options.include,
+      strategy: options.strategy ?? "merge",
+      dry_run: options.dryRun ?? false,
+      confirm: options.confirm,
+      ...(options.safetySnapshot !== undefined ? { safety_snapshot: options.safetySnapshot } : {}),
+    });
   }
 
   /** Automatic snapshots: `frequency` hourly, daily (at `hour` UTC) or weekly (on `weekday`, 0 = Monday); older ones are pruned past `keepLast` and `keepDays`. */
