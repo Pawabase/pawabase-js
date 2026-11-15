@@ -210,6 +210,18 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
     return this.http.request({ path: "/v1/status", auth: "none", headers: {} });
   }
 
+  /**
+   * The same project and key, pointed at another environment by its name in the project (`"staging"`). It is a separate client:
+   * its own session (a person signs in to one environment), its own realtime connection. The key must reach that environment.
+   *
+   * ```ts
+   * const staging = pawabase.withEnvironment("staging");
+   * ```
+   */
+  withEnvironment(environment: string): PawabaseClient<DB> {
+    return new PawabaseClient<DB>({ ...this.options, environment });
+  }
+
   /** Stop timers and close the realtime connection. Call when discarding a client. */
   dispose(): void {
     this.realtime.disconnect();

@@ -100,8 +100,25 @@ interface WireSession extends Omit<Session, "user" | "expires_at"> {
 const LOCK_PREFIX = "pawabase-auth-refresh:";
 const FATAL_REFRESH = new Set([400, 401, 403]);
 
-function storageKeyFor(baseUrl: string, apiKey: string): string {
+/** Where 0.8.0 and earlier kept the session: one per address and key, whatever the environment. */
+function legacyStorageKeyFor(baseUrl: string, apiKey: string): string {
   return `pawabase.auth.${baseUrl.replace(/^https?:\/\//, "")}.${apiKey.slice(0, 14)}`;
+}
+
+/**
+ * Where the session is kept. A key reaches every environment of its project, and a person signs in to one environment, so the
+ * project and the environment are part of the name: a staging client and a production client using the same key never share a
+ * session.
+ */
+function storageKeyFor(baseUrl: string, apiKey: string, project?: string, environment?: string): string {
+  return `pawabase.auth.${baseUrl.replace(/^https?:\/\//, "")}.${project || "-"}.${environment || "default"}.${apiKey.slice(0, 14)}`;
+}
+
+/** Whether a stored session was made for this environment: its token names the environment's full name (`<project>-<env>`) or short one. */
+function sessionFits(session: Session, environment: string | undefined): boolean {
+  if (!environment) return true;
+  const env = decodeJwt(session.access_token)?.["env"];
+  return typeof env === "string" && (env === environment || env.endsWith(`-${environment}`));
 }
 
 function toSession(wire: WireSession, user: User | undefined, fallback?: Session | null): Session {
@@ -145,6 +162,8 @@ export class AuthClient implements TokenProvider {
   private readonly storage: SessionStorage;
   private readonly persist: boolean;
   private readonly storageKey: string;
+  /** The pre-0.8.1 key, read once so an upgrade does not sign anyone out; `null` when the app chose its own key. */
+  private readonly legacyKey: string | null;
   private readonly autoRefresh: boolean;
   private readonly margin: number;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -173,7 +192,8 @@ export class AuthClient implements TokenProvider {
     const browser = browserStorage();
     this.persist = options.persistSession ?? true;
     this.storage = options.storage ?? (this.persist && browser ? browser : new MemoryStorage());
-    this.storageKey = options.storageKey ?? storageKeyFor(http.config.baseUrl, http.config.apiKey);
+    this.storageKey = options.storageKey ?? storageKeyFor(http.config.baseUrl, http.config.apiKey, options.project, options.environment);
+    this.legacyKey = options.storageKey ? null : legacyStorageKeyFor(http.config.baseUrl, http.config.apiKey);
     this.autoRefresh = options.autoRefreshToken ?? true;
     this.margin = options.refreshMarginSeconds ?? 60;
     this.gate = new CaptchaGate(http, this.storage, `${this.storageKey}:captcha`, options.captcha);
@@ -197,6 +217,8 @@ export class AuthClient implements TokenProvider {
         const parsed: unknown = JSON.parse(raw);
         if (validSession(parsed)) this.session = parsed;
         else await this.storage.removeItem(this.storageKey);
+      } else {
+        await this.adoptLegacy();
       }
     } catch {
       await Promise.resolve(this.storage.removeItem(this.storageKey)).catch(() => undefined);
@@ -208,6 +230,25 @@ export class AuthClient implements TokenProvider {
       if (result.status === "signed_in") return;
     }
     if (this.session) this.schedule();
+  }
+
+  /**
+   * Move a session saved under the old, environment-less name to this client's own name, once, if it was made for this
+   * environment. A session for another environment is left where it is, for the client that does match it.
+   */
+  private async adoptLegacy(): Promise<void> {
+    if (!this.legacyKey) return;
+    const raw = await this.storage.getItem(this.legacyKey);
+    if (!raw) return;
+    const parsed: unknown = JSON.parse(raw);
+    if (!validSession(parsed)) {
+      await this.storage.removeItem(this.legacyKey);
+      return;
+    }
+    if (!sessionFits(parsed, this.options.environment)) return;
+    this.session = parsed;
+    await this.storage.setItem(this.storageKey, raw);
+    await this.storage.removeItem(this.legacyKey);
   }
 
   /** Resolves once the stored session has been read. Everything else awaits it for you. */

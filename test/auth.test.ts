@@ -593,3 +593,42 @@ test("organizations: roles, permissions, teams, domains, security, audit, transf
   assert.deepEqual(fake.requests[12]!.json, { require_mfa: true });
   client.dispose();
 });
+
+/** A token shaped like the server's: only its `env` claim matters here. */
+function tokenFor(env: string): string {
+  const part = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${part({ alg: "HS256" })}.${part({ env, sub: "u1" })}.sig`;
+}
+
+test("one key, two environments: each client keeps its own session", async () => {
+  const fake = await serve((req) => ({ body: sessionBody(3600, { access_token: tokenFor(req.headers["x-environment"] === "staging" ? "acme-staging" : "acme-production") }) }));
+  const storage = new MemoryStorage();
+  const options = { project: "P1", url: fake.url, ...base, auth: { storage, autoRefreshToken: false } };
+  const production = createClient({ ...options, environment: "production" });
+  const staging = production.withEnvironment("staging");
+  await production.auth.signInWithPassword({ email: "a@b.co", password: "pw" });
+  await staging.auth.signInWithPassword({ email: "a@b.co", password: "pw" });
+  const keyOf = (c: typeof production) => (c.auth as unknown as { storageKey: string }).storageKey;
+  assert.notEqual(keyOf(production), keyOf(staging));
+  assert.equal(fake.requests.at(-1)!.headers["x-environment"], "staging");
+  const again = createClient({ ...options, environment: "production" });
+  const kept = await again.auth.getSession();
+  assert.equal(kept?.access_token, tokenFor("acme-production"), "the production client reads only the production session");
+  for (const c of [production, staging, again]) c.dispose();
+});
+
+test("a session saved by 0.8.0 moves to the matching environment's client once, and nowhere else", async () => {
+  const fake = await serve(() => ({ body: {} }));
+  const storage = new MemoryStorage();
+  const legacyKey = `pawabase.auth.${fake.url.replace(/^https?:\/\//, "")}.${"pk_test".slice(0, 14)}`;
+  const stored = { ...sessionBody(), access_token: tokenFor("acme-staging") };
+  storage.setItem(legacyKey, JSON.stringify(stored));
+  const options = { project: "P1", url: fake.url, ...base, auth: { storage, autoRefreshToken: false } };
+  const production = createClient({ ...options, environment: "production" });
+  assert.equal(await production.auth.getSession(), null, "a staging session is not handed to production");
+  assert.ok(storage.getItem(legacyKey), "and it stays for the client it belongs to");
+  const staging = createClient({ ...options, environment: "staging" });
+  assert.equal((await staging.auth.getSession())?.access_token, stored.access_token);
+  assert.equal(storage.getItem(legacyKey), null, "moved, not copied");
+  for (const c of [production, staging]) c.dispose();
+});

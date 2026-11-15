@@ -44,6 +44,15 @@ the environment you named in `x-environment` (left out, the project's default en
 A signed-in user's token goes in `Authorization` automatically. Keys made before keys belonged to projects keep working: each
 reaches the one environment it was made for.
 
+One key can reach several environments, so the same app can talk to another one without a second key:
+
+```ts
+const staging = pawabase.withEnvironment("staging"); // same project and key; its own session and realtime connection
+```
+
+Each environment keeps its own signed-in session: a person signs in to one environment, and a client for another never
+borrows it.
+
 | Key | Where | What it does |
 | --- | --- | --- |
 | `pb_pk_…` publishable | Browsers, mobile apps | Anonymous role. **Policies apply.** |
