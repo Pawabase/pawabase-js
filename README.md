@@ -259,6 +259,28 @@ await a.orgs.addMember("acme", { email: "ada@example.com", role: "admin" });
 (`environments`, `versions`, `backups`). Definitions (`flows`, `policies`, `webhooks`…) share `list`, `getOne`, `create`, `replace` and `remove`. `admin()` has `users`, `roles`, `orgs`, `invitations`, `sessions`, `apiKeys`, `machines`, `devices`, `privacy` and `insight`
 (events, statistics, identity backup, hosted pages). `admin().users` also reads a person's `activity()` and `timeline()` (sign-ins, account changes and requests) and handles data requests with `exportData()` and `eraseData()`. Both refuse a publishable key, and a key manages only its own environment.
 
+## Connecting a product to Pawabase (OAuth and the Management API)
+
+For a product that other people connect to *their* Pawabase organization (an editor, an AI builder, a deployment tool), use `@pawabase/client/cloud`. It has two classes: `PawabaseOAuth` is your registered app (client id and secret), and `PawabaseCloud` is one connection (a token for one organization).
+
+```ts
+import { PawabaseOAuth, PawabaseCloud } from "@pawabase/client/cloud";
+
+const oauth = new PawabaseOAuth({ clientId: process.env.PAWABASE_CLIENT_ID!, clientSecret: process.env.PAWABASE_CLIENT_SECRET!, redirectUri: "https://app.example.com/oauth/pawabase/callback" });
+
+// 1. Send the person to Pawabase. Keep state and codeVerifier in their session.
+const { url, state, codeVerifier } = await oauth.authorize({ scopes: ["projects:read", "projects:write"] });
+
+// 2. In your callback route: checks the state, trades the code (PKCE), returns tokens to save.
+const tokens = await oauth.callback(req.url, { state, codeVerifier });
+
+// 3. Use the connection. Tokens are refreshed for you, one refresh at a time, and each new pair is handed to you to save.
+const pawabase = new PawabaseCloud({ token: oauth.tokenSource(tokens, { onRefresh: (next) => save(next) }) });
+const project = await pawabase.projects.waitUntilRunning((await pawabase.projects.create({ name: "Customer portal" })).ref);
+```
+
+It also covers platform apps (`oauth.clientCredentials()`, `claimLink`), personal tokens (`new PawabaseCloud({ token: "pbp_…" })`), marketplace apps, API keys, and everything Studio can do inside a project (`pawabase.studio(ref)`). Errors are `OAuthError` (`code` is the OAuth error, `needsReconnect` for `invalid_grant`) and `CloudError` (`code`, `status`, `details`).
+
 ## Types
 
 Generate a `Database` type from your environment's OpenAPI document:

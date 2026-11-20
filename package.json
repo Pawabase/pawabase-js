@@ -1,6 +1,6 @@
 {
   "name": "@pawabase/client",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Official TypeScript client for Pawabase: data, auth, storage, flows, agents and realtime.",
   "type": "module",
   "main": "./dist/cjs/index.js",
@@ -35,6 +35,16 @@
       "require": {
         "types": "./dist/cjs/admin.d.ts",
         "default": "./dist/cjs/admin.js"
+      }
+    },
+    "./cloud": {
+      "import": {
+        "types": "./dist/esm/cloud.d.ts",
+        "default": "./dist/esm/cloud.js"
+      },
+      "require": {
+        "types": "./dist/cjs/cloud.d.ts",
+        "default": "./dist/cjs/cloud.js"
       }
     },
     "./package.json": "./package.json"
