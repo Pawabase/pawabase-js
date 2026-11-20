@@ -20,6 +20,8 @@ export type {
   UpdateUserInput,
   UrlSessionResult,
 } from "./auth.js";
+export { BachsClient, BachsPayments } from "./bachs.js";
+export type { BachsPayment, BachsPaymentInput, BachsPaymentStarted, BachsStatus, BachsWaitOptions } from "./bachs.js";
 export { CaptchaClient, captchaChallengeOf, isCaptchaError, solveChallenge } from "./captcha.js";
 export type { CaptchaAction, CaptchaChallenge, CaptchaOptions, CaptchaPass, CaptchaProvider, CaptchaVerification, PrepareResult } from "./captcha.js";
 export { MemoryStorage } from "./session-store.js";

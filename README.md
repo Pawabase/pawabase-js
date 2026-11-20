@@ -140,6 +140,10 @@ Also: **guest sessions** (`signInAnonymously()`, then `upgradeAnonymous({ email,
 `auth.passkeys.signIn()` do the whole WebAuthn ceremony; `list`, `remove`, and the `request…` / `finish…` pairs are there for native apps and tests),
 `issueToken("billing")` for a short-lived token for another service, and `jwks()` for the public keys that verify it.
 
+**Bachs payments.** With the Bachs integration installed (Studio → Integrations), `pawabase.bachs.payments.create({ amount, currency, successUrl })`
+starts a payment and answers `{ checkoutUrl, reference, … }`; `get(reference)`, `list({ status })` and `waitFor(reference)` read what Pawabase recorded
+after it asked Bachs. Every `create` carries an Idempotency-Key (yours, or made for you), so a retry never starts a second payment.
+
 **Bot protection.** When the environment protects sign-up or sign-in, a request can be refused with `captcha_required`. The built-in
 check is solved for you and the request sent again; a solved check earns a clearance that is remembered. For Turnstile, hCaptcha or
 reCAPTCHA give `auth.captcha.getToken`, which shows the provider's widget and returns its token. For your own forms,

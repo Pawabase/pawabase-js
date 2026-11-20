@@ -1,5 +1,6 @@
 import { AiClient } from "./ai.js";
 import { AuthClient, type AuthOptions } from "./auth.js";
+import { BachsClient } from "./bachs.js";
 import { CaptchaClient } from "./captcha.js";
 import { ResourceClient, type AnyRow, type ResourceTypes } from "./data.js";
 import { ConfigError } from "./errors.js";
@@ -84,6 +85,8 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
   readonly realtime: RealtimeClient;
   /** Bot protection for your own forms: earn a pass in the browser (`protect`), check it on your server (`verify`). */
   readonly captcha: CaptchaClient;
+  /** The Bachs payments integration: `pawabase.bachs.payments.create(…)`. Install it in Studio first. */
+  readonly bachs: BachsClient;
 
   constructor(readonly options: ClientOptions) {
     if (!options.url) throw new ConfigError("createClient needs the gateway `url`.");
@@ -134,6 +137,7 @@ export class PawabaseClient<DB extends DatabaseShape = Untyped> {
     config.tokens = stateless ? staticTokens(options.accessToken as NonNullable<ClientOptions["accessToken"]>) : this.auth;
     this.storage = new StorageClient(this.http);
     this.captcha = new CaptchaClient(this.http, options.auth?.captcha);
+    this.bachs = new BachsClient(this.http);
     this.ai = new AiClient(this.http);
     this.flows = new FlowsClient(this.http);
     this.routes = new RoutesClient(this.http);
